@@ -1,0 +1,66 @@
+{
+  "users": [
+    {
+      "id": "u-1765357829253",
+      "name": "alperen",
+      "username": "alperen",
+      "age": "22",
+      "goalType": "gain_muscle",
+      "height": "",
+      "weight": "",
+      "gender": "",
+      "programId": "split-4",
+      "assignedTrainerId": "t-1765357792715",
+      "salt": "dfeb38bbb5aec9da",
+      "passwordHash": "18114c060fd6819447dddcf37e34057544d79e969c230f0dea6e09ec4857694b"
+    }
+  ],
+  "trainers": [
+    {
+      "id": "t-1765357792715",
+      "name": "alperen bayar",
+      "username": "alperen.trainer",
+      "specialty": "güç",
+      "bio": "10 yıllık pt",
+      "salt": "2c6993a5973f5c0a",
+      "passwordHash": "6f9774f8b18e66e79339bccc75cad9ba75aaa2c84d911fa5835a8cee7471fcd7"
+    }
+  ],
+  "messages": [
+    {
+      "id": "m-1765373404668",
+      "senderId": "u-1765357829253",
+      "receiverId": "t-1765357792715",
+      "senderType": "user",
+      "text": "selam",
+      "createdAt": "2025-12-10T13:30:04.668Z"
+    },
+    {
+      "id": "m-1765373783778",
+      "senderId": "t-1765357792715",
+      "receiverId": "u-1765357829253",
+      "senderType": "trainer",
+      "text": "selam",
+      "createdAt": "2025-12-10T13:36:23.778Z"
+    },
+    {
+      "id": "m-1765376536974",
+      "senderId": "t-1765357792715",
+      "receiverId": "u-1765357829253",
+      "senderType": "trainer",
+      "text": "program",
+      "createdAt": "2025-12-10T14:22:16.974Z"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "n-1765357856738",
+      "trainerId": "t-1765357792715",
+      "userId": "u-1765357829253",
+      "userName": "alperen",
+      "userGoal": "gain_muscle",
+      "createdAt": "2025-12-10T09:10:56.738Z",
+      "type": "assign_request"
+    }
+  ]
+}

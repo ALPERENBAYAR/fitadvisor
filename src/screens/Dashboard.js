@@ -7,24 +7,27 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+
+import { getUsdaApiKey } from '../utils/api';
 
 const { width } = Dimensions.get('window');
 
 const STORAGE_TODAY_KEY = 'fitadvisor:todayStats';
 const STORAGE_HISTORY_KEY = 'fitadvisor:history';
+const STORAGE_DATA_SOURCE_KEY = 'fitadvisor:dataSource';
+const STORAGE_REMINDERS_KEY = 'fitadvisor:reminders';
 
 function computeScore(stats) {
   if (!stats) return 0;
   const stepRatio = stats.stepsTarget ? stats.steps / stats.stepsTarget : 0;
-  const workoutRatio = stats.workoutTarget
-    ? stats.workoutMinutes / stats.workoutTarget
-    : 0;
+  const workoutRatio = stats.workoutTarget ? stats.workoutMinutes / stats.workoutTarget : 0;
   const waterRatio = stats.waterTarget ? stats.waterLiters / stats.waterTarget : 0;
-
   const avg = (stepRatio + workoutRatio + waterRatio) / 3;
   const clamped = Math.max(0, Math.min(1, avg));
   return Math.round(clamped * 100);
@@ -38,7 +41,8 @@ function updateHistory(prevHistory, todayId, score) {
 export default function Dashboard({ profile, goals, selectedProgram }) {
   const [imageUri, setImageUri] = useState(null);
   const [analysisText, setAnalysisText] = useState('Şimdilik örnek bir analiz gösteriliyor.');
-  const userName = 'Alperen';
+  const [analysisStatus, setAnalysisStatus] = useState('idle'); // idle | loading | ready | error
+  const userName = profile?.name || 'Alperen';
 
   const stepsTarget = goals?.stepsTarget ?? 8000;
   const workoutTarget = goals?.workoutMinutesTarget ?? 30;
@@ -50,8 +54,19 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
     workoutTarget,
     waterLiters: 0.8,
     waterTarget,
+    calories: 0,
+    caloriesTarget: 2000,
   });
   const [history, setHistory] = useState([]);
+  const [dataSource, setDataSource] = useState('manual'); // manual | synced
+  const [reminders, setReminders] = useState({ water: true, steps: false, workout: true });
+  const [foodEntries, setFoodEntries] = useState([]);
+  const [foodQuery, setFoodQuery] = useState('');
+  const [foodResults, setFoodResults] = useState([]);
+  const [foodStatus, setFoodStatus] = useState('idle'); // idle | loading | error
+  const [foodError, setFoodError] = useState('');
+
+  const usdaApiKey = getUsdaApiKey();
 
   const todayId = new Date().toISOString().slice(0, 10);
   const score = computeScore(todayStats);
@@ -64,7 +79,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
     bmi = weightKg / (heightMeters * heightMeters);
   }
 
-  let bmiLabel = '—';
+  let bmiLabel = '';
   let bmiComment = 'Profil bilgilerinle daha net bir analiz çıkaracağız.';
 
   if (bmi) {
@@ -82,19 +97,19 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
       bmiComment = 'Daha kontrollü bir program ve doktor desteğiyle çalışmak önemli.';
     }
   }
-  const last7Days = history
-    .slice(-7)
-    .map((entry) => {
-      const date = new Date(entry.date);
-      const label = date.toLocaleDateString('tr-TR', { weekday: 'short' });
-      return { label, score: entry.score };
-    });
+
+  const last7Days = history.slice(-7).map((entry) => {
+    const date = new Date(entry.date);
+    const label = date.toLocaleDateString('tr-TR', { weekday: 'short' });
+    return { label, score: entry.score };
+  });
 
   const incrementSteps = (delta) => {
     setTodayStats((prev) => ({
       ...prev,
       steps: Math.min(prev.steps + delta, prev.stepsTarget),
     }));
+    setDataSource('manual');
   };
 
   const incrementWorkout = (delta) => {
@@ -102,6 +117,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
       ...prev,
       workoutMinutes: Math.min(prev.workoutMinutes + delta, prev.workoutTarget),
     }));
+    setDataSource('manual');
   };
 
   const incrementWater = (delta) => {
@@ -109,61 +125,92 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
       ...prev,
       waterLiters: Math.min(prev.waterLiters + delta, prev.waterTarget),
     }));
+    setDataSource('manual');
+  };
+
+  const addFoodEntry = (entry) => {
+    const calories = Math.max(0, Math.round(entry.calories || 0));
+    setFoodEntries((prev) => [...prev, { ...entry, calories }]);
+    setTodayStats((prev) => ({ ...prev, calories: (prev.calories || 0) + calories }));
+    setDataSource('manual');
+  };
+
+  const handleSearchFood = async () => {
+    if (!foodQuery.trim()) {
+      setFoodError('Bir besin adı yaz.');
+      return;
+    }
+    if (!usdaApiKey) {
+      setFoodError('USDA API anahtarı bulunamadı. EXPO_PUBLIC_USDA_API_KEY tanımlayın.');
+      return;
+    }
+    setFoodStatus('loading');
+    setFoodError('');
+    try {
+      const res = await fetch(
+        `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(foodQuery.trim())}&pageSize=5&api_key=${usdaApiKey}`
+      );
+      if (!res.ok) {
+        setFoodError('USDA isteği başarısız.');
+        setFoodStatus('error');
+        return;
+      }
+      const data = await res.json();
+      const foods = Array.isArray(data?.foods) ? data.foods : [];
+      const mapped = foods.map((f) => {
+        const nutrient =
+          (f.foodNutrients || []).find(
+            (n) =>
+              typeof n?.nutrientName === 'string' &&
+              n.nutrientName.toLowerCase().includes('energy') &&
+              (n.unitName || '').toLowerCase() === 'kcal'
+          ) || {};
+        return {
+          id: f.fdcId || f.description,
+          description: f.description || 'Bilinmeyen',
+          brand: f.brandOwner || f.brandName || '',
+          calories: nutrient.value || 0,
+        };
+      });
+      setFoodResults(mapped);
+      setFoodStatus('idle');
+    } catch (e) {
+      setFoodError('Arama sırasında hata oluştu.');
+      setFoodStatus('error');
+    }
+  };
+
+  const handleCaloriesChange = (value) => {
+    const numeric = Number(value.replace(/[^0-9.]/g, ''));
+    if (Number.isNaN(numeric)) return;
+    setTodayStats((prev) => ({ ...prev, calories: numeric }));
+    setDataSource('manual');
   };
 
   const handleRunAnalysis = async () => {
     if (!bmi) {
+      setAnalysisStatus('error');
       setAnalysisText('Analiz için profil bilgilerini (boy ve kilo) eksiksiz doldurman yeterli.');
       return;
     }
 
-    // Önce backend'e istek atmayı dene (çalışıyorsa gerçek analiz gelir)
-    if (imageUri) {
-      try {
-        const formData = new FormData();
-        formData.append('image', {
-          uri: imageUri,
-          name: 'photo.jpg',
-          type: 'image/jpeg',
-        });
-        formData.append('bmi', String(bmi));
-        formData.append('goalType', profile?.goalType ?? '');
-        formData.append('selectedProgramTitle', selectedProgram?.title ?? '');
+    setAnalysisStatus('loading');
 
-        const response = await fetch('http://localhost:4000/analyze', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-          body: formData,
-        });
+    // Backend analyze kapalı; lokal analiz metni kullanılıyor.
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data?.ok && data?.analysis?.comment) {
-            setAnalysisText(data.analysis.comment);
-            return;
-          }
-        }
-      } catch (error) {
-        // Backend yoksa veya hata alırsak sessizce local analize düşeceğiz
-      }
-    }
-
-    // Backend'ten sonuç alamazsak local kural tabanlı analize geri dön
     const goal = profile?.goalType;
     let text = '';
 
     if (goal === 'gain_muscle') {
       if (bmi < 22) {
         text =
-          'Kas kazanmak için zayıf sayılabilecek bir aralıktasın. Düzenli kuvvet antrenmanı ve dengeli beslenme kas kütleni artırmana yardımcı olacak.';
+          'Kas kazanmak için nispeten zayıf sayılabilecek bir aralıktasın. Düzenli kuvvet antrenmanı ve dengeli beslenme kas kütleni artırmana yardım edecek.';
       } else if (bmi < 27) {
         text =
           'Kas kazanmak için uygun bir aralıktasın. Ağırlık antrenmanlarını düzenli tutman ve toparlanmaya dikkat etmen yeterli.';
       } else {
         text =
-          'Kas kazanma hedefin var; önce hafif bir yağ azaltma dönemi ile eklemlere yükü azaltmak senin için daha konforlu olabilir.';
+          'Kas kazanma hedefin var; önce hafif bir yağ azaltma dönemi ile eklemlere yükü azaltmak daha konforlu olabilir.';
       }
     } else if (goal === 'maintain') {
       if (bmi < 18.5) {
@@ -174,7 +221,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
           'Formunu koruma açısından iyi bir aralıktasın. Düzenli adım, hafif kuvvet ve esneme çalışmaları bu durumu sürdürmeni sağlar.';
       } else {
         text =
-          'Formu koruma hedefinde vücut kompozisyonunu biraz hafifletmek konforunu artırabilir; sakin tempolu kilo verme bu noktada uygun görünüyor.';
+          'Formu koruma hedefinde vücut kompozisyonunu biraz hafifletmek konforunu artırabilir; sakin tempolu kilo verme uygun görünüyor.';
       }
     } else {
       if (bmi < 25) {
@@ -185,7 +232,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
           'Kilo verme hedefin için yürüyüş, hafif koşu ve kuvvet egzersizlerini birleştirmek yağ oranını istikrarlı şekilde azaltmana yardımcı olur.';
       } else {
         text =
-          'Kilo verme sürecinde yavaş ve sürdürülebilir ilerlemek en sağlıklısı. Düzenli hareket, uyku ve beslenme ile başlayıp gerektiğinde uzman desteği ekleyebilirsin.';
+          'Kilo verme sürecinde yavaş ve sürdürülebilir ilerlemek en sağlıklısı. Düzenli hareket, uyku ve beslenme ile başlayıp gerekirse uzman desteği ekleyebilirsin.';
       }
     }
 
@@ -194,6 +241,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
     }
 
     setAnalysisText(text);
+    setAnalysisStatus('ready');
   };
 
   useEffect(() => {
@@ -203,7 +251,15 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
         if (storedToday) {
           const parsed = JSON.parse(storedToday);
           if (parsed.date === todayId && parsed.stats) {
-            setTodayStats((prev) => ({ ...prev, ...parsed.stats }));
+            setTodayStats((prev) => ({
+              ...prev,
+              ...parsed.stats,
+              calories: parsed.stats.calories ?? prev.calories ?? 0,
+              caloriesTarget: parsed.stats.caloriesTarget ?? prev.caloriesTarget ?? 2000,
+            }));
+            if (Array.isArray(parsed.foodEntries)) {
+              setFoodEntries(parsed.foodEntries);
+            }
           }
         }
 
@@ -214,7 +270,21 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
             setHistory(parsedHistory);
           }
         }
+
+        const storedSource = await AsyncStorage.getItem(STORAGE_DATA_SOURCE_KEY);
+        if (storedSource) {
+          setDataSource(storedSource);
+        }
+
+        const storedReminders = await AsyncStorage.getItem(STORAGE_REMINDERS_KEY);
+        if (storedReminders) {
+          const parsed = JSON.parse(storedReminders);
+          if (parsed) {
+            setReminders(parsed);
+          }
+        }
       } catch (e) {
+        // Ignore load errors; fall back to defaults
       }
     };
 
@@ -227,7 +297,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
         const currentScore = computeScore(todayStats);
         await AsyncStorage.setItem(
           STORAGE_TODAY_KEY,
-          JSON.stringify({ date: todayId, stats: todayStats })
+          JSON.stringify({ date: todayId, stats: todayStats, foodEntries })
         );
 
         setHistory((prev) => {
@@ -235,12 +305,27 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
           AsyncStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(updated));
           return updated;
         });
+
+        await AsyncStorage.setItem(STORAGE_DATA_SOURCE_KEY, dataSource);
       } catch (e) {
+        // Non-blocking persistence
       }
     };
 
     persist();
-  }, [todayStats, todayId]);
+  }, [todayStats, todayId, dataSource]);
+
+  useEffect(() => {
+    const persistReminders = async () => {
+      try {
+        await AsyncStorage.setItem(STORAGE_REMINDERS_KEY, JSON.stringify(reminders));
+      } catch (e) {
+        // Non-blocking
+      }
+    };
+
+    persistReminders();
+  }, [reminders]);
 
   const handlePickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -258,16 +343,35 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
     }
   };
 
+  const toggleReminder = (key) => {
+    setReminders((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const markAsSynced = () => setDataSource('synced');
+
   return (
     <SafeAreaView style={styles.safeArea}>
+      <View style={styles.heroOverlay} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
-          <View>
+          <View style={styles.headerTextGroup}>
             <Text style={styles.greeting}>Merhaba, {userName}</Text>
-            <Text style={styles.subtitle}>Bugünkü sağlık özetin burada.</Text>
+            <Text style={styles.subtitle}>Bugünkü sağlık özetin hazır.</Text>
+            <View style={styles.chipRow}>
+              <View style={styles.chip}>
+                <Text style={styles.chipText}>
+                  Veri kaynağı: {dataSource === 'synced' ? 'Senkron' : 'Manuel'}
+                </Text>
+              </View>
+              {selectedProgram ? (
+                <View style={[styles.chip, styles.chipAlt]}>
+                  <Text style={styles.chipText}>Program: {selectedProgram.title}</Text>
+                </View>
+              ) : null}
+            </View>
           </View>
           <View style={styles.badge}>
             <Text style={styles.badgeLabel}>Gün</Text>
@@ -275,164 +379,279 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
           </View>
         </View>
 
-        {selectedProgram && (
-          <View style={styles.selectedProgramBadge}>
-            <Text style={styles.selectedProgramLabel}>Seçili program</Text>
-            <Text style={styles.selectedProgramTitle}>{selectedProgram.title}</Text>
-          </View>
-        )}
-
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Son 7 gün</Text>
-        </View>
-
-        <View style={styles.historyList}>
-          {last7Days.map((day) => (
-            <View key={day.label} style={styles.historyRow}>
-              <Text style={styles.historyDay}>{day.label}</Text>
-              <View style={styles.historyBarBackground}>
-                <View
-                  style={[
-                    styles.historyBarFill,
-                    { width: `${day.score}%` },
-                  ]}
-                />
-              </View>
-              <Text style={styles.historyValue}>{day.score}</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.profileCard}>
-          <View style={styles.profileImageWrapper}>
-            <Image
-              source={{
-                uri:
-                  imageUri ?? 'https://via.placeholder.com/120x120.png?text=You',
-              }}
-              style={styles.profileImage}
-            />
-          </View>
-          <View style={styles.profileTextContainer}>
-            <Text style={styles.profileTitle}>Görsel Analiz</Text>
-            <Text style={styles.profileSubtitle}>
-              Fotoğrafına göre duruşun ve kas dağılımın hakkında özet çıkaracağız.
-              {` ${analysisText}`}
-            </Text>
-            {bmi && (
-              <View style={styles.bmiRow}>
-                <Text style={styles.bmiValue}>BMI: {bmi.toFixed(1)} ({bmiLabel})</Text>
-                <Text style={styles.bmiComment}>{bmiComment}</Text>
-              </View>
-            )}
-            <View style={styles.profileTagRow}>
-              <Text style={styles.profileTag}>Duruş: Dengeli</Text>
-              <Text style={styles.profileTag}>Omuz hizası: İyi</Text>
-            </View>
-
-            <TouchableOpacity style={styles.profileButton} onPress={handlePickImage}>
-              <Text style={styles.profileButtonText}>Fotoğraf Seç</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.profileButton, styles.profileAnalyzeButton]}
-              onPress={handleRunAnalysis}
-            >
-              <Text style={styles.profileButtonText}>Analiz Et</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
         <View style={styles.scoreCard}>
-          <View style={styles.scoreRingPlaceholder}>
+          <View style={styles.scoreRing}>
             <Text style={styles.scoreValue}>{score}</Text>
             <Text style={styles.scoreUnit}>/100</Text>
           </View>
           <View style={styles.scoreTextContainer}>
-            <Text style={styles.scoreTitle}>Günlük Sağlık Skoru</Text>
+            <Text style={styles.scoreTitle}>Günlük sağlık skoru</Text>
             <Text style={styles.scoreDescription}>
-              Hedeflerine yaklaşıyorsun. Bugün adım ve su hedeflerine odaklanırsan
-              skoru kolayca yükseltebilirsin.
+              Adım, su ve antrenman hedeflerin tek yerde toplandı. Devam edersen bugün hedefi
+              yakalayabilirsin.
             </Text>
+            <View style={styles.dataSourceRow}>
+              <Text style={styles.dataSourceValue}>
+                {dataSource === 'synced' ? 'Senkron verisi' : 'Manuel giriş'}
+              </Text>
+              {dataSource !== 'synced' && (
+                <TouchableOpacity style={styles.dataSourceButton} onPress={markAsSynced}>
+                  <Text style={styles.dataSourceButtonText}>Senkron işaretle</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         </View>
 
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Bugünkü hedeflerin</Text>
-          <Text style={styles.sectionLink}>Detaylar</Text>
+        <View style={styles.card}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Görsel analiz</Text>
+            {bmi && <Text style={styles.sectionTag}>BMI: {bmi.toFixed(1)} {bmiLabel ? `(${bmiLabel})` : ''}</Text>}
+          </View>
+          <View style={styles.profileRow}>
+            <Image
+              source={{ uri: imageUri ?? 'https://via.placeholder.com/120x120.png?text=You' }}
+              style={styles.profileImage}
+            />
+            <View style={styles.profileTextContainer}>
+              <Text style={styles.profileSubtitle}>
+                Fotoğrafına göre duruş ve kompozisyonu özetliyoruz. {analysisText}
+              </Text>
+              <Text style={styles.bmiComment}>{bmiComment}</Text>
+              <View style={styles.profileActions}>
+                <TouchableOpacity style={styles.profileButton} onPress={handlePickImage}>
+                  <Text style={styles.profileButtonText}>Fotoğraf Seç</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.profileButton,
+                    styles.profileAnalyzeButton,
+                    analysisStatus === 'loading' && styles.profileButtonDisabled,
+                  ]}
+                  onPress={handleRunAnalysis}
+                  disabled={analysisStatus === 'loading'}
+                >
+                  <Text style={styles.profileButtonText}>
+                    {analysisStatus === 'loading' ? 'Analiz yapılıyor...' : 'Analiz Et'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
         </View>
 
-        <View style={styles.statsRow}>
-          <View style={styles.statCardWide}>
-            <Text style={styles.statLabel}>Adım</Text>
-            <Text style={styles.statValue}>{todayStats.steps}</Text>
-            <Text style={styles.statSubValue}>
-              / {todayStats.stepsTarget} adım
-            </Text>
-            <View style={styles.progressBarBackground}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  { width: `${(todayStats.steps / todayStats.stepsTarget) * 100}%` },
-                ]}
+        <View style={styles.card}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Bugünkü hedeflerin</Text>
+            <Text style={styles.sectionLink}>Detaylar</Text>
+          </View>
+
+          <View style={styles.statsRow}>
+            <View style={styles.statCardWide}>
+              <Text style={styles.statLabel}>Adım</Text>
+              <Text style={styles.statValue}>{todayStats.steps}</Text>
+              <Text style={styles.statSubValue}>/ {todayStats.stepsTarget} adım</Text>
+              <View style={styles.progressBarBackground}>
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    { width: `${(todayStats.steps / todayStats.stepsTarget) * 100}%` },
+                  ]}
+                />
+              </View>
+              <View style={styles.actionsRow}>
+                <TouchableOpacity style={styles.smallActionButton} onPress={() => incrementSteps(500)}>
+                  <Text style={styles.smallActionText}>+500</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.smallActionButton} onPress={() => incrementSteps(1000)}>
+                  <Text style={styles.smallActionText}>+1000</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.statsRow}>
+            <View style={styles.statCardSmall}>
+              <Text style={styles.statLabel}>Antrenman</Text>
+              <Text style={styles.statValue}>{todayStats.workoutMinutes} dk</Text>
+              <Text style={styles.statSubValue}>/ {todayStats.workoutTarget} dk</Text>
+              <View style={styles.actionsRow}>
+                <TouchableOpacity style={styles.smallActionButton} onPress={() => incrementWorkout(5)}>
+                  <Text style={styles.smallActionText}>+5 dk</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.statCardSmall}>
+              <Text style={styles.statLabel}>Su</Text>
+              <Text style={styles.statValue}>{todayStats.waterLiters} L</Text>
+              <Text style={styles.statSubValue}>/ {todayStats.waterTarget} L</Text>
+              <View style={styles.actionsRow}>
+                <TouchableOpacity style={styles.smallActionButton} onPress={() => incrementWater(0.25)}>
+                  <Text style={styles.smallActionText}>+0.25 L</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Günlük Kalori</Text>
+            <Text style={styles.sectionTag}>Hedef: {todayStats.caloriesTarget} kcal</Text>
+          </View>
+          <Text style={styles.subtitle}>Bugün aldığın toplam kaloriyi yaz.</Text>
+          <View style={styles.calorieRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.statLabel}>Alınan</Text>
+              <TextInput
+                value={todayStats.calories ? String(todayStats.calories) : ''}
+                onChangeText={handleCaloriesChange}
+                placeholder="ör. 1850"
+                placeholderTextColor="#94a3b8"
+                keyboardType="numeric"
+                style={styles.calorieInput}
               />
             </View>
-            <View style={styles.actionsRow}>
-              <TouchableOpacity
-                style={styles.smallActionButton}
-                onPress={() => incrementSteps(500)}
-              >
-                <Text style={styles.smallActionText}>+500</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.smallActionButton}
-                onPress={() => incrementSteps(1000)}
-              >
-                <Text style={styles.smallActionText}>+1000</Text>
-              </TouchableOpacity>
+            <View style={styles.calorieSummary}>
+              <Text style={styles.statLabel}>Toplam</Text>
+              <Text style={styles.calorieTotal}>{todayStats.calories || 0} kcal</Text>
+              <Text style={styles.statSubValue}>/ {todayStats.caloriesTarget} kcal</Text>
             </View>
+          </View>
+          <View style={styles.progressBarBackground}>
+            <View
+              style={[
+                styles.progressBarFill,
+                {
+                  width: `${Math.min(
+                    100,
+                    todayStats.caloriesTarget ? ((todayStats.calories || 0) / todayStats.caloriesTarget) * 100 : 0
+                  )}%`,
+                  backgroundColor: '#f59e0b',
+                },
+              ]}
+            />
           </View>
         </View>
 
-        <View style={styles.statsRow}>
-          <View style={styles.statCardSmall}>
-            <Text style={styles.statLabel}>Antrenman</Text>
-            <Text style={styles.statValue}>{todayStats.workoutMinutes} dk</Text>
-            <Text style={styles.statSubValue}>
-              / {todayStats.workoutTarget} dk
-            </Text>
-            <View style={styles.actionsRow}>
-              <TouchableOpacity
-                style={styles.smallActionButton}
-                onPress={() => incrementWorkout(5)}
-              >
-                <Text style={styles.smallActionText}>+5 dk</Text>
-              </TouchableOpacity>
+        <View style={styles.card}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>USDA ile Kalori Ara</Text>
+            {usdaApiKey ? <Text style={styles.sectionTag}>API hazır</Text> : <Text style={styles.sectionTag}>API anahtarı eksik</Text>}
+          </View>
+          <Text style={styles.subtitle}>Besin arat, USDA FoodData Central'dan kaloriyi ekle.</Text>
+          <View style={styles.foodSearchRow}>
+            <TextInput
+              value={foodQuery}
+              onChangeText={setFoodQuery}
+              placeholder="ör. chicken breast"
+              placeholderTextColor="#9ca3af"
+              style={[styles.input, { flex: 1 }]}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={[styles.searchButton, foodStatus === 'loading' && styles.searchButtonDisabled]}
+              onPress={handleSearchFood}
+              disabled={foodStatus === 'loading'}
+            >
+              <Text style={styles.searchButtonText}>{foodStatus === 'loading' ? 'Aranıyor...' : 'Ara'}</Text>
+            </TouchableOpacity>
+          </View>
+          {foodError ? <Text style={styles.message}>{foodError}</Text> : null}
+          {foodResults.length > 0 ? (
+            <View style={styles.foodResults}>
+              {foodResults.map((item) => (
+                <View key={item.id} style={styles.foodRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.foodTitle}>{item.description}</Text>
+                    <Text style={styles.foodMeta}>
+                      {item.brand ? `${item.brand} • ` : ''}{Math.round(item.calories || 0)} kcal
+                    </Text>
+                  </View>
+                  <TouchableOpacity style={styles.foodAddButton} onPress={() => addFoodEntry(item)}>
+                    <Text style={styles.foodAddButtonText}>Ekle</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+
+        {foodEntries.length > 0 && (
+          <View style={styles.card}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Günün Kalori Kaydı</Text>
+              <Text style={styles.sectionTag}>{foodEntries.length} öğe</Text>
+            </View>
+            <View style={styles.foodResults}>
+              {foodEntries.map((item, index) => (
+                <View key={`${item.id || index}-${index}`} style={styles.foodRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.foodTitle}>{item.description || 'Bilinmeyen'}</Text>
+                    <Text style={styles.foodMeta}>{Math.round(item.calories || 0)} kcal</Text>
+                  </View>
+                </View>
+              ))}
             </View>
           </View>
+        )}
 
-          <View style={styles.statCardSmall}>
-            <Text style={styles.statLabel}>Su</Text>
-            <Text style={styles.statValue}>{todayStats.waterLiters} L</Text>
-            <Text style={styles.statSubValue}>
-              / {todayStats.waterTarget} L
-            </Text>
-            <View style={styles.actionsRow}>
-              <TouchableOpacity
-                style={styles.smallActionButton}
-                onPress={() => incrementWater(0.25)}
-              >
-                <Text style={styles.smallActionText}>+0.25 L</Text>
-              </TouchableOpacity>
+        <View style={styles.card}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Hatırlatmalar</Text>
+            <Text style={styles.sectionTag}>Su / Adım / Antrenman</Text>
+          </View>
+          {['water', 'steps', 'workout'].map((key) => (
+            <View
+              key={key}
+              style={[
+                styles.reminderRow,
+                reminders[key] && styles.reminderRowActive,
+              ]}
+            >
+              <Text style={styles.reminderLabel}>
+                {key === 'water' && 'Su bildirimi'}
+                {key === 'steps' && 'Adım bildirimi'}
+                {key === 'workout' && 'Antrenman bildirimi'}
+              </Text>
+              <Switch
+                value={reminders[key]}
+                onValueChange={() => toggleReminder(key)}
+                trackColor={{ true: '#16a34a', false: '#1f2937' }}
+                thumbColor={reminders[key] ? '#dcfce7' : '#e2e8f0'}
+              />
             </View>
+          ))}
+          <Text style={styles.reminderHint}>
+            Bildirimler yerel olarak planlanacak. Expo Notifications ekleyerek gerçek hatırlatmalara geçebilirsin.
+          </Text>
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Son 7 gün</Text>
+            <Text style={styles.sectionTag}>Günlük skor</Text>
+          </View>
+          <View style={styles.historyList}>
+            {last7Days.map((day) => (
+              <View key={day.label} style={styles.historyRow}>
+                <Text style={styles.historyDay}>{day.label}</Text>
+                <View style={styles.historyBarBackground}>
+                  <View style={[styles.historyBarFill, { width: `${day.score}%` }]} />
+                </View>
+                <Text style={styles.historyValue}>{day.score}</Text>
+              </View>
+            ))}
           </View>
         </View>
 
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Bugünkü önerin</Text>
-          <Text style={styles.sectionTag}>Full body · 35 dk</Text>
-        </View>
+        <View style={styles.card}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Bugünkü önerin</Text>
+            <Text style={styles.sectionTag}>Full body • 35 dk</Text>
+          </View>
 
-        <View style={styles.programCard}>
           <Text style={styles.programTitle}>FitAdvisor Gün 3</Text>
           <Text style={styles.programSubtitle}>
             Isınma, temel kuvvet ve hafif kardiyo ile dengeli bir seans.
@@ -443,7 +662,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
               <View style={styles.dot} />
               <View style={styles.programTextGroup}>
                 <Text style={styles.programItemTitle}>5 dk hafif yürüyüş</Text>
-                <Text style={styles.programItemMeta}>Isınma · düşük tempo</Text>
+                <Text style={styles.programItemMeta}>Isınma • düşük tempo</Text>
               </View>
             </View>
 
@@ -451,7 +670,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
               <View style={styles.dot} />
               <View style={styles.programTextGroup}>
                 <Text style={styles.programItemTitle}>Squat + Push-up</Text>
-                <Text style={styles.programItemMeta}>3 set · 12 tekrar</Text>
+                <Text style={styles.programItemMeta}>3 set • 12 tekrar</Text>
               </View>
             </View>
 
@@ -459,7 +678,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
               <View style={styles.dot} />
               <View style={styles.programTextGroup}>
                 <Text style={styles.programItemTitle}>Plank</Text>
-                <Text style={styles.programItemMeta}>3 set · 30 sn</Text>
+                <Text style={styles.programItemMeta}>3 set • 30 sn</Text>
               </View>
             </View>
           </View>
@@ -476,202 +695,233 @@ const horizontalPadding = width < 380 ? 16 : 24;
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#e5f2ff',
+    backgroundColor: '#0b1220',
+  },
+  heroOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: -80,
+    right: -80,
+    height: 220,
+    backgroundColor: '#0f172a',
+    borderBottomLeftRadius: 48,
+    borderBottomRightRadius: 48,
+    opacity: 0.95,
   },
   scrollContent: {
     paddingHorizontal: horizontalPadding,
-    paddingTop: 16,
+    paddingTop: 18,
     paddingBottom: 24,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  profileCard: {
-    flexDirection: 'row',
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    padding: 14,
+    alignItems: 'flex-start',
     marginBottom: 16,
   },
-  profileImageWrapper: {
-    marginRight: 12,
-  },
-  profileImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 999,
-    backgroundColor: '#e5e7eb',
-  },
-  profileTextContainer: {
+  headerTextGroup: {
     flex: 1,
-    justifyContent: 'center',
-  },
-  profileTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  profileSubtitle: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  profileTagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
+    marginRight: 12,
     gap: 6,
   },
-  profileTag: {
-    fontSize: 11,
-    color: '#166534',
-    backgroundColor: '#dcfce7',
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  bmiRow: {
-    marginTop: 8,
-  },
-  bmiValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 2,
-  },
-  bmiComment: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  profileButton: {
-    marginTop: 10,
-    alignSelf: 'flex-start',
-    backgroundColor: '#16a34a',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  profileButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  profileAnalyzeButton: {
-    marginLeft: 8,
-    backgroundColor: '#22c55e',
-  },
   greeting: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#0f172a',
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#f8fafc',
   },
   subtitle: {
-    fontSize: 13,
-    color: '#4b5563',
-    marginTop: 4,
+    fontSize: 14,
+    color: '#cbd5e1',
   },
-  selectedProgramBadge: {
-    marginBottom: 10,
-    paddingVertical: 8,
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
     paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#111827',
     borderRadius: 999,
-    backgroundColor: '#ecfdf3',
     borderWidth: 1,
-    borderColor: '#bbf7d0',
-    alignSelf: 'flex-start',
+    borderColor: '#1f2937',
   },
-  selectedProgramLabel: {
-    fontSize: 11,
-    color: '#16a34a',
-    fontWeight: '600',
+  chipAlt: {
+    backgroundColor: '#0ea5e9',
+    borderColor: '#38bdf8',
   },
-  selectedProgramTitle: {
-    fontSize: 13,
-    color: '#166534',
+  chipText: {
+    color: '#e2e8f0',
+    fontSize: 12,
     fontWeight: '600',
   },
   badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    backgroundColor: '#ffffff',
+    borderColor: '#1f2937',
+    backgroundColor: '#111827',
     alignItems: 'center',
   },
   badgeLabel: {
-    fontSize: 10,
-    color: '#9ca3af',
+    fontSize: 11,
+    color: '#cbd5e1',
   },
   badgeValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#f8fafc',
   },
   scoreCard: {
     flexDirection: 'row',
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
+    backgroundColor: '#111827',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: '#1f2937',
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 14,
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 24,
   },
-  scoreRingPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 6,
-    borderColor: '#16a34a',
+  scoreRing: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 8,
+    borderColor: '#10b981',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14,
+    marginRight: 16,
+    backgroundColor: '#0f172a',
   },
   scoreValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#022c22',
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#ecfeff',
   },
   scoreUnit: {
-    fontSize: 10,
-    color: '#6b7280',
+    fontSize: 11,
+    color: '#94a3b8',
   },
   scoreTextContainer: {
     flex: 1,
+    gap: 6,
   },
   scoreTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#e2e8f0',
   },
   scoreDescription: {
     fontSize: 13,
-    color: '#6b7280',
+    color: '#cbd5e1',
+    lineHeight: 19,
+  },
+  dataSourceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+    marginTop: 4,
+  },
+  dataSourceValue: {
+    fontSize: 12,
+    color: '#f8fafc',
+    fontWeight: '600',
+  },
+  dataSourceButton: {
+    backgroundColor: '#0ea5e9',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  dataSourceButtonText: {
+    fontSize: 12,
+    color: '#0b1120',
+    fontWeight: '700',
+  },
+  card: {
+    backgroundColor: '#0f172a',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    padding: 16,
+    marginBottom: 14,
+    shadowColor: '#020617',
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
+    fontWeight: '700',
+    color: '#e2e8f0',
   },
   sectionLink: {
     fontSize: 12,
-    color: '#16a34a',
+    color: '#38bdf8',
   },
   sectionTag: {
     fontSize: 12,
-    color: '#6b7280',
+    color: '#94a3b8',
+  },
+  profileRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  profileImage: {
+    width: 92,
+    height: 92,
+    borderRadius: 18,
+    backgroundColor: '#1f2937',
+  },
+  profileTextContainer: {
+    flex: 1,
+    gap: 6,
+  },
+  profileSubtitle: {
+    fontSize: 13,
+    color: '#cbd5e1',
+    lineHeight: 18,
+  },
+  bmiComment: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  profileActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+    flexWrap: 'wrap',
+  },
+  profileButton: {
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+  },
+  profileAnalyzeButton: {
+    backgroundColor: '#10b981',
+    borderColor: '#10b981',
+  },
+  profileButtonDisabled: {
+    opacity: 0.6,
+  },
+  profileButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#f8fafc',
   },
   statsRow: {
     flexDirection: 'row',
@@ -680,83 +930,213 @@ const styles = StyleSheet.create({
   },
   statCardWide: {
     flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
+    backgroundColor: '#111827',
+    borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: '#1f2937',
   },
   statCardSmall: {
     flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
+    backgroundColor: '#111827',
+    borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: '#1f2937',
   },
   statLabel: {
     fontSize: 12,
-    color: '#6b7280',
+    color: '#cbd5e1',
     marginBottom: 4,
   },
   statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#f8fafc',
   },
   statSubValue: {
     fontSize: 12,
-    color: '#6b7280',
+    color: '#94a3b8',
     marginTop: 2,
+  },
+  calorieRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-end',
+    marginTop: 8,
+  },
+  calorieInput: {
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    color: '#f8fafc',
+    fontSize: 16,
+  },
+  calorieSummary: {
+    minWidth: 120,
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    alignItems: 'flex-start',
+  },
+  calorieTotal: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#fef3c7',
+  },
+  foodSearchRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  searchButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#0ea5e9',
+    borderRadius: 10,
+  },
+  searchButtonDisabled: {
+    opacity: 0.6,
+  },
+  searchButtonText: {
+    color: '#0b1120',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  foodResults: {
+    marginTop: 8,
+    gap: 10,
+  },
+  foodRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#1f2937',
+  },
+  foodTitle: {
+    color: '#e2e8f0',
+    fontWeight: '700',
+  },
+  foodMeta: {
+    color: '#94a3b8',
+    fontSize: 12,
+  },
+  foodAddButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#10b981',
+    borderRadius: 10,
+  },
+  foodAddButtonText: {
+    color: '#0b1120',
+    fontWeight: '800',
+    fontSize: 12,
   },
   actionsRow: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 8,
+    marginTop: 10,
   },
   smallActionButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#f9fafb',
+    borderColor: '#1f2937',
+    backgroundColor: '#0ea5e91a',
   },
   smallActionText: {
-    fontSize: 11,
-    color: '#111827',
-    fontWeight: '500',
+    fontSize: 12,
+    color: '#e2e8f0',
+    fontWeight: '600',
   },
   progressBarBackground: {
     marginTop: 10,
-    height: 6,
+    height: 8,
     borderRadius: 999,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: '#1f2937',
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
     borderRadius: 999,
-    backgroundColor: '#16a34a',
+    backgroundColor: '#10b981',
   },
-  programCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
+  reminderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: '#111827',
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    padding: 16,
-    marginTop: 12,
+    borderColor: '#1f2937',
+    marginBottom: 8,
+  },
+  reminderRowActive: {
+    borderColor: '#10b981',
+  },
+  reminderLabel: {
+    fontSize: 14,
+    color: '#e2e8f0',
+  },
+  reminderHint: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  historyList: {
+    gap: 8,
+    marginTop: 6,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  historyDay: {
+    width: 48,
+    fontSize: 12,
+    color: '#cbd5e1',
+  },
+  historyBarBackground: {
+    flex: 1,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#1f2937',
+    overflow: 'hidden',
+  },
+  historyBarFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#38bdf8',
+  },
+  historyValue: {
+    width: 36,
+    fontSize: 12,
+    textAlign: 'right',
+    color: '#cbd5e1',
   },
   programTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
+    fontWeight: '700',
+    color: '#e2e8f0',
     marginBottom: 4,
   },
   programSubtitle: {
     fontSize: 13,
-    color: '#6b7280',
-    marginBottom: 10,
+    color: '#cbd5e1',
+    marginBottom: 12,
   },
   programList: {
     gap: 10,
@@ -769,40 +1149,22 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#16a34a',
-    marginRight: 8,
+    backgroundColor: '#10b981',
+    marginRight: 10,
   },
-  historyList: {
-    marginTop: 12,
-    gap: 6,
-    marginBottom: 8,
-  },
-  historyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  historyDay: {
-    width: 40,
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  historyBarBackground: {
+  programTextGroup: {
     flex: 1,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: '#e5e7eb',
-    overflow: 'hidden',
   },
-  historyBarFill: {
-    height: '100%',
-    borderRadius: 999,
-    backgroundColor: '#16a34a',
+  programItemTitle: {
+    fontSize: 14,
+    color: '#e2e8f0',
+    fontWeight: '700',
   },
-  historyValue: {
-    width: 32,
+  programItemMeta: {
     fontSize: 12,
-    textAlign: 'right',
-    color: '#6b7280',
+    color: '#94a3b8',
+  },
+  footerSpace: {
+    height: 24,
   },
 });

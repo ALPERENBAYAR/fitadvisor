@@ -1,133 +1,103 @@
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { useState } from "react";
-import { SafeAreaView, StyleSheet } from "react-native";
-import AnalysisScreen from "../src/screens/AnalysisScreen";
-import Dashboard from "../src/screens/Dashboard";
-import Login from "../src/screens/Login";
-import Onboarding from "../src/screens/Onboarding";
-import ProfileScreen from "../src/screens/ProfileScreen";
-import ProgramScreen from "../src/screens/ProgramScreen";
+import { useRouter } from 'expo-router';
+import { Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
 
-type Step = "login" | "onboarding" | "dashboard";
-
-type Profile = {
-  age: string;
-  height: string;
-  weight: string;
-  gender: string;
-  goalType: string;
-};
-
-type DailyGoals = {
-  stepsTarget: number;
-  workoutMinutesTarget: number;
-  waterTargetLiters: number;
-};
-
-function calculateDailyGoals(profile: Profile): DailyGoals {
-  const goal = profile.goalType;
-
-  if (goal === "gain_muscle") {
-    return {
-      stepsTarget: 7000,
-      workoutMinutesTarget: 45,
-      waterTargetLiters: 2.8,
-    };
-  }
-
-  if (goal === "maintain") {
-    return {
-      stepsTarget: 7000,
-      workoutMinutesTarget: 30,
-      waterTargetLiters: 2.2,
-    };
-  }
-
-  // varsayılan: kilo vermek
-  return {
-    stepsTarget: 9000,
-    workoutMinutesTarget: 35,
-    waterTargetLiters: 2.5,
-  };
-}
-
-const Tab = createBottomTabNavigator();
-
-type HomeTabsProps = {
-  profile: Profile | null;
-  goals: DailyGoals | null;
-};
-
-type SelectedProgram = { id: string; title: string } | null;
-
-function HomeTabs({ profile, goals }: HomeTabsProps) {
-  const [selectedProgram, setSelectedProgram] = useState<SelectedProgram>(null);
+export default function Index() {
+  const router = useRouter();
+  const colorScheme = useColorScheme();
 
   return (
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: "#16a34a",
-        tabBarInactiveTintColor: "#6b7280",
-        tabBarStyle: { backgroundColor: "#ffffff" },
-      }}
-    >
-      <Tab.Screen name="Ana">
-        {() => <Dashboard profile={profile} goals={goals} selectedProgram={selectedProgram} />}
-      </Tab.Screen>
-      <Tab.Screen name="Program">
-        {() => (
-          <ProgramScreen
-            selectedProgramId={selectedProgram?.id ?? null}
-            onSelectProgram={setSelectedProgram}
-          />
-        )}
-      </Tab.Screen>
-      <Tab.Screen name="Analiz" component={AnalysisScreen} />
-      <Tab.Screen name="Profil">
-        {() => (
-          <ProfileScreen
-            profile={profile}
-            onUpdateProfile={(updated: Profile) => {
-              setProfile(updated);
-              setGoals(calculateDailyGoals(updated));
-            }}
-          />
-        )}
-      </Tab.Screen>
-    </Tab.Navigator>
-  );
-}
-
-export default function Page() {
-  const [step, setStep] = useState<Step>("login");
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [goals, setGoals] = useState<DailyGoals | null>(null);
-
-  return (
-    <SafeAreaView style={styles.container}>
-      {step === "login" && (
-        <Login onLoginSuccess={() => setStep("onboarding")} />
-      )}
-      {step === "onboarding" && (
-        <Onboarding
-          onComplete={(p: Profile) => {
-            setProfile(p);
-            setGoals(calculateDailyGoals(p));
-            setStep("dashboard");
-          }}
-        />
-      )}
-      {step === "dashboard" && (
-        <HomeTabs profile={profile} goals={goals} />
-      )}
-    </SafeAreaView>
+    <View style={[styles.container, colorScheme === 'dark' && styles.containerDark]}>
+      <View style={styles.content}>
+        <Text style={[styles.title, colorScheme === 'dark' && styles.titleDark]}>
+          FitAdvisor
+        </Text>
+        <Text style={[styles.subtitle, colorScheme === 'dark' && styles.subtitleDark]}>
+          Fitness yolculuğunu seç: Kullanıcı veya Trainer girişi.
+        </Text>
+        
+        <View style={styles.buttonContainer}>
+          <Pressable 
+            style={[styles.button, styles.primaryButton]}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.buttonText}>Kullanıcı Girişi</Text>
+          </Pressable>
+          
+          <Pressable 
+            style={[styles.button, styles.trainerButton]}
+            onPress={() => router.push('/trainer-login')}
+          >
+            <Text style={[styles.buttonText, styles.trainerButtonText]}>Trainer Girişi</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#e5f2ff",
+    backgroundColor: '#e5f2ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  containerDark: {
+    backgroundColor: '#1a1a1a',
+  },
+  splitRow: {
+    flexDirection: 'row',
+    gap: 32,
+    paddingHorizontal: 20,
+  },
+  content: {
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    width: 320,
+  },
+  title: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#16a34a',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  titleDark: {
+    color: '#22c55e',
+  },
+  subtitle: {
+    fontSize: 18,
+    color: '#6b7280',
+    marginBottom: 48,
+    textAlign: 'center',
+  },
+  subtitleDark: {
+    color: '#9ca3af',
+  },
+  buttonContainer: {
+    width: '100%',
+    gap: 12,
+  },
+  button: {
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButton: {
+    backgroundColor: '#16a34a',
+  },
+  secondaryButton: {
+    backgroundColor: '#0ea5e9',
+    borderWidth: 0,
+  },
+  buttonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryButtonText: {
+    color: '#0b1120',
   },
 });
