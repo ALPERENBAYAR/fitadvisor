@@ -1,3 +1,4 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
 
@@ -7,27 +8,28 @@ export default function Index() {
 
   return (
     <View style={[styles.container, colorScheme === 'dark' && styles.containerDark]}>
+      <LinearGradient
+        colors={['#0b1220', '#0b192b']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <View style={styles.glowTop} />
+      <View style={styles.glowBottom} />
       <View style={styles.content}>
-        <Text style={[styles.title, colorScheme === 'dark' && styles.titleDark]}>
-          FitAdvisor
+        <Text style={styles.badge}>FA</Text>
+        <Text style={styles.title}>FitAdvisor</Text>
+        <Text style={styles.subtitle}>
+          Koyu mavi + turkuaz temayla fitness yolculuğunu seç. Kullanıcı veya Trainer girişi.
         </Text>
-        <Text style={[styles.subtitle, colorScheme === 'dark' && styles.subtitleDark]}>
-          Fitness yolculuğunu seç: Kullanıcı veya Trainer girişi.
-        </Text>
-        
+
         <View style={styles.buttonContainer}>
-          <Pressable 
-            style={[styles.button, styles.primaryButton]}
-            onPress={() => router.push('/login')}
-          >
+          <Pressable style={[styles.button, styles.primaryButton]} onPress={() => router.push('/login')}>
             <Text style={styles.buttonText}>Kullanıcı Girişi</Text>
           </Pressable>
-          
-          <Pressable 
-            style={[styles.button, styles.trainerButton]}
-            onPress={() => router.push('/trainer-login')}
-          >
-            <Text style={[styles.buttonText, styles.trainerButtonText]}>Trainer Girişi</Text>
+
+          <Pressable style={[styles.button, styles.secondaryButton]} onPress={() => router.push('/trainer-login')}>
+            <Text style={[styles.buttonText, styles.secondaryButtonText]}>Trainer Girişi</Text>
           </Pressable>
         </View>
       </View>
@@ -38,41 +40,65 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#e5f2ff',
+    backgroundColor: '#0b1220',
     justifyContent: 'center',
     alignItems: 'center',
   },
   containerDark: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#0b1220',
   },
-  splitRow: {
-    flexDirection: 'row',
-    gap: 32,
-    paddingHorizontal: 20,
+  glowTop: {
+    position: 'absolute',
+    top: -120,
+    left: -80,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: '#0ea5e9',
+    opacity: 0.18,
+  },
+  glowBottom: {
+    position: 'absolute',
+    bottom: -140,
+    right: -100,
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: '#10b981',
+    opacity: 0.14,
   },
   content: {
     alignItems: 'center',
     paddingHorizontal: 32,
-    width: 320,
+    width: 360,
+    gap: 12,
+  },
+  badge: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#0ea5e9',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    color: '#0b1220',
+    fontSize: 20,
+    fontWeight: '800',
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
   },
   title: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#16a34a',
-    marginBottom: 16,
+    fontSize: 42,
+    fontWeight: '900',
+    color: '#e2e8f0',
+    marginBottom: 4,
     textAlign: 'center',
-  },
-  titleDark: {
-    color: '#22c55e',
   },
   subtitle: {
-    fontSize: 18,
-    color: '#6b7280',
-    marginBottom: 48,
+    fontSize: 16,
+    color: '#cbd5e1',
+    marginBottom: 24,
     textAlign: 'center',
-  },
-  subtitleDark: {
-    color: '#9ca3af',
   },
   buttonContainer: {
     width: '100%',
@@ -86,18 +112,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   primaryButton: {
-    backgroundColor: '#16a34a',
+    backgroundColor: '#10b981',
+    shadowColor: '#10b981',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
   },
   secondaryButton: {
-    backgroundColor: '#0ea5e9',
-    borderWidth: 0,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#1f2937',
   },
   buttonText: {
     color: '#ffffff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   secondaryButtonText: {
-    color: '#0b1120',
+    color: '#38bdf8',
   },
 });

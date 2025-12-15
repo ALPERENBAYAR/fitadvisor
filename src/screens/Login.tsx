@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -6,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -70,7 +72,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       if (typeof onLoginSuccess === 'function') {
         onLoginSuccess();
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Hata', 'Giriş sırasında bir sorun oluştu.');
     } finally {
       setIsLoading(false);
@@ -79,14 +81,29 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.heroOverlay} />
+      <LinearGradient
+        colors={['#0a1630', '#0c1d3c', '#0e2347']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradient}
+      />
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.inner}>
-          <Text style={styles.brand}>FitAdvisor</Text>
-          <Text style={styles.subtitle}>Hesabına giriş yap</Text>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <View style={styles.hero}>
+            <View style={styles.badgeRow}>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>FA</Text>
+              </View>
+              <Text style={styles.brand}>FitAdvisor</Text>
+            </View>
+            <Text style={styles.title}>Fitness yolculuğuna kaldığın yerden devam et.</Text>
+            <Text style={styles.subtitle}>
+              Koyu mavi + turkuaz temasıyla kişisel paneline güvenle giriş yap.
+            </Text>
+          </View>
 
           <View style={styles.card}>
             <View style={styles.inputGroup}>
@@ -95,7 +112,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                 value={username}
                 onChangeText={setUsername}
                 placeholder="alperen"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor="#94a3b8"
                 autoCapitalize="none"
                 style={styles.input}
               />
@@ -106,23 +123,35 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               <TextInput
                 value={password}
                 onChangeText={setPassword}
-                placeholder="123"
-                placeholderTextColor="#9ca3af"
+                placeholder="••••••••"
+                placeholderTextColor="#94a3b8"
                 secureTextEntry
                 style={styles.input}
               />
             </View>
 
-            <TouchableOpacity style={styles.button} onPress={handleLogin}>
-              <Text style={styles.buttonText}>{isLoading ? 'Giriş yapılıyor...' : 'Giriş Yap'}</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.helper}>Demo için kullanıcı: alperen | Şifre: 123</Text>
-            <TouchableOpacity onPress={() => router.push('/register')}>
-              <Text style={styles.link}>Hesabın yok mu? Oluştur</Text>
+            <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={isLoading}>
+              <LinearGradient
+                colors={['#14b8a6', '#0ea5e9']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.buttonGradient}
+              >
+                <Text style={styles.buttonText}>
+                  {isLoading ? 'Giriş yapılıyor...' : 'Giriş Yap'}
+                </Text>
+              </LinearGradient>
             </TouchableOpacity>
           </View>
-        </View>
+
+          <TouchableOpacity onPress={() => router.push('/register')}>
+            <Text style={styles.link}>Hesabın yok mu? Hemen kaydol</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => router.push('/trainer-login')}>
+            <Text style={styles.helper}>Trainer girişi için buraya tıkla</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -131,49 +160,75 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0b1220',
+    backgroundColor: '#0a1630',
   },
-  heroOverlay: {
-    position: 'absolute',
-    top: -120,
-    left: -120,
-    width: 320,
-    height: 320,
-    borderRadius: 999,
-    backgroundColor: '#0ea5e9',
-    opacity: 0.18,
+  gradient: {
+    ...StyleSheet.absoluteFillObject,
   },
   container: {
     flex: 1,
   },
-  inner: {
-    flex: 1,
-    justifyContent: 'center',
+  content: {
     paddingHorizontal: 24,
-    gap: 12,
+    paddingTop: 48,
+    paddingBottom: 40,
+    gap: 18,
   },
+  hero: {
+    gap: 10,
+    backgroundColor: 'rgba(20,184,166,0.1)',
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(20,184,166,0.25)',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 18 },
+    shadowRadius: 28,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  badge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#0ea5e9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+  },
+  badgeText: { color: '#0b1220', fontWeight: '800', fontSize: 18 },
   brand: {
-    fontSize: 34,
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#e2e8f0',
+    marginLeft: 10,
+  },
+  title: {
+    fontSize: 20,
     fontWeight: '800',
     color: '#f8fafc',
-    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#cbd5e1',
-    textAlign: 'center',
+    lineHeight: 22,
   },
   card: {
     backgroundColor: '#0f172a',
     borderRadius: 18,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#1f2937',
-    marginTop: 12,
-    shadowColor: '#020617',
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 20,
+    borderColor: 'rgba(148,163,184,0.2)',
+    marginTop: 4,
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 14 },
+    shadowRadius: 18,
   },
   inputGroup: {
     marginBottom: 16,
@@ -194,11 +249,14 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
   },
   button: {
-    backgroundColor: '#10b981',
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
+    borderRadius: 14,
+    overflow: 'hidden',
     marginTop: 8,
+  },
+  buttonGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: 14,
   },
   buttonText: {
     color: '#0b1120',

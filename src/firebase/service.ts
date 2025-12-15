@@ -71,10 +71,27 @@ export type NotificationRow = {
   createdAt: number;
 };
 
+export type CalorieEntry = {
+  id: string;
+  description: string;
+  brand?: string;
+  calories: number;
+  grams?: number;
+};
+
+export type DailyCalories = {
+  userId: string;
+  date: string; // YYYY-MM-DD
+  total: number;
+  entries: CalorieEntry[];
+  updatedAt?: any;
+};
+
 const usersCol = collection(firebaseDb, 'users');
 const trainersCol = collection(firebaseDb, 'trainers');
 const messagesCol = collection(firebaseDb, 'messages');
 const notificationsCol = collection(firebaseDb, 'notifications');
+const caloriesCol = collection(firebaseDb, 'calories');
 
 const usernameToEmail = (username: string) => `${username.trim().toLowerCase()}@fitadvisor.local`;
 
@@ -250,6 +267,34 @@ export const updateTrainerProfile = async (
     ...payload,
   });
   return { ok: true };
+};
+
+export const saveDailyCalories = async (payload: DailyCalories) => {
+  const docId = `${payload.userId}_${payload.date}`;
+  await setDoc(
+    doc(caloriesCol, docId),
+    {
+      userId: payload.userId,
+      date: payload.date,
+      total: payload.total,
+      entries: payload.entries,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+  return { ok: true };
+};
+
+export const getDailyCalories = async (userId: string, date: string) => {
+  const docId = `${userId}_${date}`;
+  const snap = await getDoc(doc(caloriesCol, docId));
+  if (!snap.exists()) return { ok: false, total: 0, entries: [] as CalorieEntry[] };
+  const data = snap.data() as any;
+  return {
+    ok: true,
+    total: data.total || 0,
+    entries: Array.isArray(data.entries) ? (data.entries as CalorieEntry[]) : [],
+  };
 };
 
 export const getNotificationsForTrainer = async (trainerId: string) => {

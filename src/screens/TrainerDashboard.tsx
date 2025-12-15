@@ -1,10 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { getNotificationsForTrainer, getTrainerMessages, listUsers, updateTrainerProfile } from '../firebase/service';
+import {
+  getDailyCalories,
+  getNotificationsForTrainer,
+  getTrainerMessages,
+  listUsers,
+  updateTrainerProfile,
+} from '../firebase/service';
 
 const TRAINER_SESSION_KEY = 'fitadvisor:trainerSession';
 
@@ -23,6 +30,7 @@ export default function TrainerDashboard() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [photo, setPhoto] = useState<string | null>(null);
+  const [studentCalories, setStudentCalories] = useState<Record<string, { total: number; entries: any[] }>>({});
 
   const loadDashboard = async () => {
     try {
@@ -37,6 +45,18 @@ export default function TrainerDashboard() {
 
       const studentsData = await listUsers(parsed.trainerId);
       setStudents(studentsData);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const calorieMap: Record<string, { total: number; entries: any[] }> = {};
+      for (const s of studentsData) {
+        if (s.id) {
+          const cal = await getDailyCalories(s.id, today);
+          if (cal.ok) {
+            calorieMap[s.id] = { total: cal.total, entries: cal.entries || [] };
+          }
+        }
+      }
+      setStudentCalories(calorieMap);
 
       const notifData = await getNotificationsForTrainer(parsed.trainerId);
       const sortedNotifs = notifData.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -90,16 +110,31 @@ export default function TrainerDashboard() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Trainer Dashboard</Text>
-        <Text style={styles.subtitle}>Hoş geldin {session.name}. Sadece sana bağlı öğrencileri görüyorsun.</Text>
+      <LinearGradient
+        colors={['#0a1630', '#0c1e3e', '#0f254d']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradient}
+      />
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.kicker}>Trainer Dashboard</Text>
+            <Text style={styles.title}>Hoş geldin {session.name}</Text>
+            <Text style={styles.subtitle}>Sadece sana bağlı öğrencileri ve günlük kalorilerini görüyorsun.</Text>
+          </View>
+          <View style={styles.headerBadge}>
+            <Text style={styles.badgeLabel}>Öğrenci</Text>
+            <Text style={styles.badgeValue}>{students.length}</Text>
+          </View>
+        </View>
 
         <View style={styles.profileRow}>
           {photo ? (
             <Image source={{ uri: photo }} style={styles.avatar} />
           ) : (
             <View style={[styles.avatar, styles.avatarFallback]}>
-              <Text style={styles.avatarInitial}>{session.name?.[0]?.toUpperCase?.() || '🙂'}</Text>
+              <Text style={styles.avatarInitial}>{session.name?.[0]?.toUpperCase?.() || 'T'}</Text>
             </View>
           )}
           <View style={{ flex: 1 }}>
@@ -107,7 +142,14 @@ export default function TrainerDashboard() {
             <Text style={styles.meta}>Uzmanlık: {session.specialty || 'Belirtilmedi'}</Text>
           </View>
           <TouchableOpacity style={styles.photoButton} onPress={handlePickPhoto}>
-            <Text style={styles.photoButtonText}>{photo ? 'Fotoğrafı değiştir' : 'Fotoğraf ekle'}</Text>
+            <LinearGradient
+              colors={['#14b8a6', '#0ea5e9']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.photoButtonInner}
+            >
+              <Text style={styles.photoButtonText}>{photo ? 'Fotoğrafı değiştir' : 'Fotoğraf ekle'}</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
 
@@ -191,10 +233,34 @@ export default function TrainerDashboard() {
           ) : (
             students.map((s) => (
               <View key={s.id} style={styles.studentItem}>
-                <Text style={styles.studentName}>{s.name || 'İsimsiz'}</Text>
-                <Text style={styles.metaSmall}>
-                  Yaş: {s.age || '-'} • Hedef: {s.goal || '-'} • Program: {s.programId || '-'}
-                </Text>
+                <View style={styles.studentHeader}>
+                  {s.profilePhoto ? (
+                    <Image source={{ uri: s.profilePhoto }} style={styles.studentAvatar} />
+                  ) : (
+                    <View style={[styles.studentAvatar, styles.avatarFallback]}>
+                      <Text style={styles.avatarInitial}>{(s.name || s.username || '?')[0]?.toUpperCase?.() || 'Ö'}</Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.studentName}>{s.name || s.username || 'İsimsiz'}</Text>
+                    <Text style={styles.metaSmall}>
+                      Yaş: {s.age || '-'} • Hedef: {s.goal || s.goalType || '-'} • Program: {s.programId || '-'}
+                    </Text>
+                    <Text style={styles.metaSmall}>Bugün: {(studentCalories[s.id]?.total ?? 0).toFixed(0)} kcal</Text>
+                  </View>
+                </View>
+                {studentCalories[s.id]?.entries?.length ? (
+                  <View style={{ marginTop: 6, gap: 4 }}>
+                    {studentCalories[s.id].entries.map((e: any, idx: number) => (
+                      <View key={`${s.id}-cal-${idx}`} style={styles.foodRow}>
+                        <Text style={styles.metaSmall}>{e.description || 'Öğe'}</Text>
+                        <Text style={styles.metaSmall}>
+                          {Math.round(e.calories || 0)} kcal{e.grams ? ` (${e.grams} g)` : ''}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
               </View>
             ))
           )}
@@ -205,20 +271,35 @@ export default function TrainerDashboard() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0b1220' },
+  safeArea: { flex: 1, backgroundColor: '#0a1428' },
+  gradient: { ...StyleSheet.absoluteFillObject },
   container: { flex: 1, padding: 24, gap: 12 },
-  content: { padding: 24, gap: 12 },
-  title: { fontSize: 28, fontWeight: '800', color: '#f8fafc' },
-  subtitle: { fontSize: 15, color: '#cbd5e1', lineHeight: 22 },
+  content: { padding: 16, gap: 14 },
+  header: {
+    backgroundColor: 'rgba(20,184,166,0.1)',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(20,184,166,0.25)',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  kicker: { fontSize: 12, color: '#9aa8be', marginBottom: 2 },
+  title: { fontSize: 22, fontWeight: '800', color: '#f8fafc' },
+  subtitle: { fontSize: 14, color: '#cbd5e1', marginBottom: 8, lineHeight: 20 },
+  headerBadge: { alignItems: 'flex-end', justifyContent: 'center', gap: 2 },
+  badgeLabel: { fontSize: 12, color: '#9aa8be' },
+  badgeValue: { fontSize: 16, fontWeight: '800', color: '#14b8a6' },
   profileRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0f1a2f',
     borderRadius: 16,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: 'rgba(148,163,184,0.2)',
   },
   avatar: {
     width: 72,
@@ -234,12 +315,14 @@ const styles = StyleSheet.create({
   },
   avatarInitial: { fontSize: 24, color: '#e2e8f0' },
   photoButton: {
-    backgroundColor: '#0ea5e9',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  photoButtonInner: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 10,
   },
-  photoButtonText: { color: '#0b1120', fontWeight: '700' },
+  photoButtonText: { color: '#0b1120', fontWeight: '800' },
   quickRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
   quickButton: {
     flex: 1,
@@ -248,28 +331,36 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: 'rgba(148,163,184,0.2)',
   },
   quickText: { color: '#e2e8f0', fontWeight: '700' },
   metricsRow: { flexDirection: 'row', gap: 12 },
   metricCard: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0f1a2f',
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: 'rgba(148,163,184,0.2)',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 10 },
   },
   metricValue: { fontSize: 22, fontWeight: '800', color: '#f8fafc' },
   metricLabel: { fontSize: 12, color: '#94a3b8' },
   card: {
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0f1a2f',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: 'rgba(148,163,184,0.2)',
     gap: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
   },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: '#e2e8f0' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -293,6 +384,16 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   clearButtonText: { fontSize: 12, color: '#0b1120', fontWeight: '700' },
-  studentItem: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#1f2937' },
+  studentItem: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#1f2937', gap: 2 },
+  studentHeader: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  studentAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#10b981',
+    backgroundColor: '#1f2937',
+  },
   studentName: { fontSize: 15, fontWeight: '700', color: '#e2e8f0' },
+  foodRow: { flexDirection: 'row', justifyContent: 'space-between' },
 });
