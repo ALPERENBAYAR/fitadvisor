@@ -200,14 +200,24 @@ export default function DashboardScreen() {
       screenOptions={{
         headerShown: true,
         headerTitleAlign: "center",
+        headerStyle: { backgroundColor: "#0a1428" },
+        headerTitleStyle: { color: "#e2e8f0", fontWeight: "800" },
+        headerTintColor: "#e2e8f0",
+        headerShadowVisible: false,
         headerRight: () => (
           <TouchableOpacity onPress={handleLogout} style={{ paddingHorizontal: 12, paddingVertical: 6 }}>
             <Text style={{ color: "#ef4444", fontWeight: "700" }}>Çıkış</Text>
           </TouchableOpacity>
         ),
-        tabBarActiveTintColor: "#16a34a",
-        tabBarInactiveTintColor: "#6b7280",
-        tabBarStyle: { backgroundColor: "#ffffff" },
+        tabBarActiveTintColor: "#22c55e",
+        tabBarInactiveTintColor: "#94a3b8",
+        tabBarStyle: {
+          backgroundColor: "#0b1220",
+          borderTopColor: "#1f2937",
+          paddingVertical: 6,
+          height: 62,
+        },
+        sceneContainerStyle: { backgroundColor: "#0a1428" },
       }}
     >
       <Tab.Screen name="Ana">
