@@ -41,7 +41,7 @@ function updateHistory(prevHistory, todayId, score) {
 
 export default function Dashboard({ profile, goals, selectedProgram }) {
   const [imageUri, setImageUri] = useState(null);
-  const [analysisText, setAnalysisText] = useState('┼Simdilik ├Ârnek bir analiz g├Âsteriliyor.');
+  const [analysisText, setAnalysisText] = useState('\u015eimdilik \u00f6rnek bir analiz g\u00f6steriliyor.');
   const [analysisStatus, setAnalysisStatus] = useState('idle'); // idle | loading | ready | error
   const userName = profile?.name || 'Alperen';
 
@@ -81,21 +81,21 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
   }
 
   let bmiLabel = '';
-  let bmiComment = 'Profil bilgilerinle daha net bir analiz ├g─▒karaca─s─▒z.';
+  let bmiComment = 'Profil bilgilerinle daha net bir analiz \u00e7\u0131karaca\u011f\u0131z.';
 
   if (bmi) {
     if (bmi < 18.5) {
-      bmiLabel = 'Zay─▒f';
-      bmiComment = 'Biraz kilo alman ve kas k├╝tleni art─▒rman faydal─▒ olabilir.';
+      bmiLabel = 'Zay\u0131f';
+      bmiComment = 'Biraz kilo alman ve kas k\u00fctleni art\u0131rman faydal\u0131 olabilir.';
     } else if (bmi < 25) {
       bmiLabel = 'Normal';
-      bmiComment = 'Sa─sl─▒kl─▒ aral─▒ktas─▒n, hedefini korumaya odaklanabilirsin.';
+      bmiComment = 'Sa\u011fl\u0131kl\u0131 aral\u0131ktas\u0131n, hedefini korumaya odaklanabilirsin.';
     } else if (bmi < 30) {
       bmiLabel = 'Fazla kilolu';
-      bmiComment = 'D├╝zenli ad─▒m ve antrenmanla ya─s oran─▒n─▒ d├╝┼s├╝rmeye odaklan.';
+      bmiComment = 'D\u00fczenli ad\u0131m ve antrenmanla ya\u011f oran\u0131n\u0131 d\u00fc\u015f\u00fcrmeye odaklan.';
     } else {
       bmiLabel = 'Obezite';
-      bmiComment = 'Daha kontroll├╝ bir program ve doktor deste─siyle ├gal─▒┼smak ├Ânemli.';
+      bmiComment = 'Daha kontroll\u00fc bir program ve doktor deste\u011fiyle \u00e7al\u0131\u015fmak \u00f6nemli.';
     }
   }
 
@@ -138,11 +138,11 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
   const handleSearchFood = async () => {
     if (!foodQuery.trim()) {
-      setFoodError('Bir besin ad─▒ yaz.');
+      setFoodError('Bir besin adı yaz.');
       return;
     }
     if (!usdaApiKey) {
-      setFoodError('USDA API anahtar─▒ bulunamad─▒. EXPO_PUBLIC_USDA_API_KEY tan─▒mlay─▒n.');
+      setFoodError('USDA API anahtarı bulunamadı. EXPO_PUBLIC_USDA_API_KEY tanımlayın.');
       return;
     }
     setFoodStatus('loading');
@@ -152,7 +152,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
         `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(foodQuery.trim())}&pageSize=5&api_key=${usdaApiKey}`
       );
       if (!res.ok) {
-        setFoodError('USDA iste─si ba┼sar─▒s─▒z.');
+        setFoodError('USDA isteği başarısız.');
         setFoodStatus('error');
         return;
       }
@@ -176,7 +176,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
       setFoodResults(mapped);
       setFoodStatus('idle');
     } catch (e) {
-      setFoodError('Arama s─▒ras─▒nda hata olu┼stu.');
+      setFoodError('Arama sırasında hata oluştu.');
       setFoodStatus('error');
     }
   };
@@ -191,13 +191,13 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
   const handleRunAnalysis = async () => {
     if (!bmi) {
       setAnalysisStatus('error');
-      setAnalysisText('Analiz i├gin profil bilgilerini (boy ve kilo) eksiksiz doldurman yeterli.');
+      setAnalysisText('\u015eimdilik \u00f6rnek bir analiz g\u00f6steriliyor.');
       return;
     }
 
     setAnalysisStatus('loading');
 
-    // Backend analyze kapal─▒; lokal analiz metni kullan─▒l─▒yor.
+    // Backend analyze kapal\u0131; lokal analiz metni kullan\u0131l\u0131yor.
 
     const goal = profile?.goalType;
     let text = '';
@@ -205,40 +205,40 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
     if (goal === 'gain_muscle') {
       if (bmi < 22) {
         text =
-          'Kas kazanmak i├gin nispeten zay─▒f say─▒labilecek bir aral─▒ktas─▒n. D├╝zenli kuvvet antrenman─▒ ve dengeli beslenme kas k├╝tleni art─▒rmana yard─▒m edecek.';
+          'Kas kazanmak i\u00e7in nispeten zay\u0131f say\u0131labilecek bir aral\u0131ktas\u0131n. D\u00fczenli kuvvet antrenman\u0131 ve dengeli beslenme kas k\u00fctleni art\u0131rmana yard\u0131m edecek.';
       } else if (bmi < 27) {
         text =
-          'Kas kazanmak i├gin uygun bir aral─▒ktas─▒n. A─s─▒rl─▒k antrenmanlar─▒n─▒ d├╝zenli tutman ve toparlanmaya dikkat etmen yeterli.';
+          'Kas kazanmak i\u00e7in uygun bir aral\u0131ktas\u0131n. A\u011f\u0131rl\u0131k antrenmanlar\u0131n\u0131 d\u00fczenli tutman ve toparlanmaya dikkat etmen yeterli.';
       } else {
         text =
-          'Kas kazanma hedefin var; ├Ânce hafif bir ya─s azaltma d├Ânemi ile eklemlere y├╝k├╝ azaltmak daha konforlu olabilir.';
+          'Kas kazanma hedefin var; \u00f6nce hafif bir ya\u011f azaltma d\u00f6nemi ile eklemlere y\u00fck\u00fc azaltmak daha konforlu olabilir.';
       }
     } else if (goal === 'maintain') {
       if (bmi < 18.5) {
         text =
-          'Formu koruma hedefi i├gin kilon alt s─▒n─▒rda. Biraz daha g├╝├gl├╝ kas k├╝tlesi ve yeterli kalori almak seni daha dengeli hissettirebilir.';
+          'Formu koruma hedefi i\u00e7in kilon alt s\u0131n\u0131rda. Biraz daha g\u00fc\u00e7l\u00fc kas k\u00fctlesi ve yeterli kalori almak seni daha dengeli hissettirebilir.';
       } else if (bmi < 25) {
         text =
-          'Formunu koruma a├g─▒s─▒ndan iyi bir aral─▒ktas─▒n. D├╝zenli ad─▒m, hafif kuvvet ve esneme ├gal─▒┼smalar─▒ bu durumu s├╝rd├╝rmeni sa─slar.';
+          'Formunu koruma a\u00e7\u0131s\u0131ndan iyi bir aral\u0131ktas\u0131n. D\u00fczenli ad\u0131m, hafif kuvvet ve esneme \u00e7al\u0131\u015fmalar\u0131 bu durumu s\u00fcrd\u00fcrmeni sa\u011flar.';
       } else {
         text =
-          'Formu koruma hedefinde v├╝cut kompozisyonunu biraz hafifletmek konforunu art─▒rabilir; sakin tempolu kilo verme uygun g├Âr├╝n├╝yor.';
+          'Formu koruma hedefinde v\u00fc\u00e7ut kompozisyonunu biraz hafifletmek konforunu art\u0131rabilir; sakin tempolu kilo verme uygun g\u00f6r\u00fcn\u00fcyor.';
       }
     } else {
       if (bmi < 25) {
         text =
-          'Kilo verme hedefin var ama BMI aral─▒─s─▒n fena de─sil. V├╝cudu s─▒k─▒la┼st─▒rmaya, kas korumaya ve sa─sl─▒kl─▒ beslenmeye odaklanmak yeterli olabilir.';
+          'Kilo verme hedefin var ama BMI aral\u0131\u011f\u0131n fena de\u011fil. V\u00fccudu s\u0131k\u0131la\u015ft\u0131rmaya, kas korumaya ve sa\u011fl\u0131kl\u0131 beslenmeye odaklanmak yeterli olabilir.';
       } else if (bmi < 30) {
         text =
-          'Kilo verme hedefin i├gin y├╝r├╝y├╝┼s, hafif ko┼su ve kuvvet egzersizlerini birle┼stirmek ya─s oran─▒n─▒ istikrarl─▒ ┼sekilde azaltmana yard─▒mc─▒ olur.';
+          'Kilo verme hedefin i\u00e7in y\u00fcr\u00fcy\u00fc\u015f, hafif ko\u015fu ve kuvvet egzersizlerini birle\u015ftirmek ya\u011f oran\u0131n\u0131 istikrarl\u0131 \u015fekilde azaltmana yard\u0131mc\u0131 olur.';
       } else {
         text =
-          'Kilo verme s├╝recinde yava┼s ve s├╝rd├╝r├╝lebilir ilerlemek en sa─sl─▒kl─▒s─▒. D├╝zenli hareket, uyku ve beslenme ile ba┼slay─▒p gerekirse uzman deste─si ekleyebilirsin.';
+          'Kilo verme s\u00fcrecinde yava\u015f ve s\u00fcrd\u00fcr\u00fclebilir ilerlemek en sa\u011fl\u0131kl\u0131s\u0131. D\u00fczenli hareket, uyku ve beslenme ile ba\u015flay\u0131p gerekirse uzman deste\u011fi ekleyebilirsin.';
       }
     }
 
     if (selectedProgram?.title) {
-      text += ` Se├gili program─▒n (${selectedProgram.title}) bu hedefe destek olacak ┼sekilde yap─▒land─▒r─▒ld─▒.`;
+      text += ` Se\u00e7ili program\u0131n (${selectedProgram.title}) bu hedefe destek olacak \u015fekilde yap\u0131land\u0131r\u0131ld\u0131.`;
     }
 
     setAnalysisText(text);
@@ -360,11 +360,11 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
         <View style={styles.headerRow}>
           <View style={styles.headerTextGroup}>
             <Text style={styles.greeting}>Merhaba, {userName}</Text>
-            <Text style={styles.subtitle}>Bug├╝nk├╝ sa─sl─▒k ├Âzetin haz─▒r.</Text>
+            <Text style={styles.subtitle}>Bug\u00fcnk\u00fc sa\u011fl\u0131k \u00f6zetin haz\u0131r.</Text>
             <View style={styles.chipRow}>
               <View style={styles.chip}>
                 <Text style={styles.chipText}>
-                  Veri kayna─s─▒: {dataSource === 'synced' ? 'Senkron' : 'Manuel'}
+                  Veri kayna\u011f\u0131: {dataSource === 'synced' ? 'Senkron' : 'Manuel'}
                 </Text>
               </View>
               {selectedProgram ? (
@@ -375,7 +375,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
             </View>
           </View>
           <View style={styles.badge}>
-            <Text style={styles.badgeLabel}>G├╝n</Text>
+            <Text style={styles.badgeLabel}>G\u00fcn</Text>
             <Text style={styles.badgeValue}>3</Text>
           </View>
         </View>
@@ -386,18 +386,18 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
             <Text style={styles.scoreUnit}>/100</Text>
           </View>
           <View style={styles.scoreTextContainer}>
-            <Text style={styles.scoreTitle}>G├╝nl├╝k sa─sl─▒k skoru</Text>
+            <Text style={styles.scoreTitle}>G\u00fcnl\u00fck sa\u011fl\u0131k skoru</Text>
             <Text style={styles.scoreDescription}>
-              Ad─▒m, su ve antrenman hedeflerin tek yerde topland─▒. Devam edersen bug├╝n hedefi
+              Ad\u0131m, su ve antrenman hedeflerin tek yerde topland\u0131. Devam edersen bug\u00fcn hedefi
               yakalayabilirsin.
             </Text>
             <View style={styles.dataSourceRow}>
               <Text style={styles.dataSourceValue}>
-                {dataSource === 'synced' ? 'Senkron verisi' : 'Manuel giri┼s'}
+                {dataSource === 'synced' ? 'Senkron verisi' : 'Manuel giri\u015f'}
               </Text>
               {dataSource !== 'synced' && (
                 <TouchableOpacity style={styles.dataSourceButton} onPress={markAsSynced}>
-                  <Text style={styles.dataSourceButtonText}>Senkron i┼saretle</Text>
+                  <Text style={styles.dataSourceButtonText}>Senkron i\u015faretle</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -406,7 +406,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>G├Ârsel analiz</Text>
+            <Text style={styles.sectionTitle}>G\u00f6rsel analiz</Text>
             {bmi && <Text style={styles.sectionTag}>BMI: {bmi.toFixed(1)} {bmiLabel ? `(${bmiLabel})` : ''}</Text>}
           </View>
           <View style={styles.profileRow}>
@@ -416,12 +416,12 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
             />
             <View style={styles.profileTextContainer}>
               <Text style={styles.profileSubtitle}>
-                Foto─sraf─▒na g├Âre duru┼s ve kompozisyonu ├Âzetliyoruz. {analysisText}
+                Foto\u011fraf\u0131na g\u00f6re duru\u015f ve kompozisyonu \u00f6zetliyoruz. {analysisText}
               </Text>
               <Text style={styles.bmiComment}>{bmiComment}</Text>
               <View style={styles.profileActions}>
                 <TouchableOpacity style={styles.profileButton} onPress={handlePickImage}>
-                  <Text style={styles.profileButtonText}>Foto─sraf Se├g</Text>
+                  <Text style={styles.profileButtonText}>Foto\u011fraf Se\u00e7</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[
@@ -433,7 +433,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
                   disabled={analysisStatus === 'loading'}
                 >
                   <Text style={styles.profileButtonText}>
-                    {analysisStatus === 'loading' ? 'Analiz yap─▒l─▒yor...' : 'Analiz et'}
+                    {analysisStatus === 'loading' ? 'Analiz yap\u0131l\u0131yor...' : 'Analiz et'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -443,15 +443,15 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Bug├╝nk├╝ hedeflerin</Text>
+            <Text style={styles.sectionTitle}>Bug\u00fcnk\u00fc hedeflerin</Text>
             <Text style={styles.sectionLink}>Detaylar</Text>
           </View>
 
           <View style={styles.statsRow}>
             <View style={styles.statCardWide}>
-              <Text style={styles.statLabel}>Ad─▒m</Text>
+              <Text style={styles.statLabel}>Ad\u0131m</Text>
               <Text style={styles.statValue}>{todayStats.steps}</Text>
-              <Text style={styles.statSubValue}>/ {todayStats.stepsTarget} ad─▒m</Text>
+              <Text style={styles.statSubValue}>/ {todayStats.stepsTarget} ad\u0131m</Text>
               <View style={styles.progressBarBackground}>
                 <View
                   style={[
@@ -498,17 +498,17 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>G├╝nl├╝k Kalori</Text>
+            <Text style={styles.sectionTitle}>G\u00fcnl\u00fck Kalori</Text>
             <Text style={styles.sectionTag}>Hedef: {todayStats.caloriesTarget} kcal</Text>
           </View>
-          <Text style={styles.subtitle}>Bug├╝n ald─▒─s─▒n toplam kaloriyi yaz.</Text>
+          <Text style={styles.subtitle}>Bug\u00fcn ald\u0131\u011f\u0131n toplam kaloriyi yaz.</Text>
           <View style={styles.calorieRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.statLabel}>Al─▒nan</Text>
+              <Text style={styles.statLabel}>Al\u0131nan</Text>
               <TextInput
                 value={todayStats.calories ? String(todayStats.calories) : ''}
                 onChangeText={handleCaloriesChange}
-                placeholder="├Âr. 1850"
+                placeholder="\u00f6r. 1850"
                 placeholderTextColor="#94a3b8"
                 keyboardType="numeric"
                 style={styles.calorieInput}
@@ -539,14 +539,14 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>USDA ile Kalori Ara</Text>
-            {usdaApiKey ? <Text style={styles.sectionTag}>API haz─▒r</Text> : <Text style={styles.sectionTag}>API anahtar─▒ eksik</Text>}
+            {usdaApiKey ? <Text style={styles.sectionTag}>API haz\u0131r</Text> : <Text style={styles.sectionTag}>API anahtar\u0131 eksik</Text>}
           </View>
           <Text style={styles.subtitle}>Besin arat, USDA FoodData Central'dan kaloriyi ekle.</Text>
           <View style={styles.foodSearchRow}>
             <TextInput
               value={foodQuery}
               onChangeText={setFoodQuery}
-              placeholder="├Âr. chicken breast"
+              placeholder="\u00f6r. chicken breast"
               placeholderTextColor="#9ca3af"
               style={[styles.input, { flex: 1 }]}
               autoCapitalize="none"
@@ -556,7 +556,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
               onPress={handleSearchFood}
               disabled={foodStatus === 'loading'}
             >
-              <Text style={styles.searchButtonText}>{foodStatus === 'loading' ? 'Aran─▒yor...' : 'Ara'}</Text>
+              <Text style={styles.searchButtonText}>{foodStatus === 'loading' ? 'Aran\u0131yor...' : 'Ara'}</Text>
             </TouchableOpacity>
           </View>
           {foodError ? <Text style={styles.message}>{foodError}</Text> : null}
@@ -567,7 +567,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.foodTitle}>{item.description}</Text>
                     <Text style={styles.foodMeta}>
-                      {item.brand ? `${item.brand} ÔCó ` : ''}{Math.round(item.calories || 0)} kcal
+                      {item.brand ? `${item.brand} \u2022 ` : ''}{Math.round(item.calories || 0)} kcal
                     </Text>
                   </View>
                   <TouchableOpacity style={styles.foodAddButton} onPress={() => addFoodEntry(item)}>
@@ -582,8 +582,8 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
         {foodEntries.length > 0 && (
           <View style={styles.card}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>G├╝n├╝n Kalori Kayd─▒</Text>
-              <Text style={styles.sectionTag}>{foodEntries.length} ├Â─se</Text>
+              <Text style={styles.sectionTitle}>G\u00fcn\u00fcn Kalori Kayd\u0131</Text>
+              <Text style={styles.sectionTag}>{foodEntries.length} \u00f6\u011fe</Text>
             </View>
             <View style={styles.foodResults}>
               {foodEntries.map((item, index) => (
@@ -600,8 +600,8 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Hat─▒rlatmalar</Text>
-            <Text style={styles.sectionTag}>Su / Ad─▒m / Antrenman</Text>
+            <Text style={styles.sectionTitle}>Hat\u0131rlatmalar</Text>
+            <Text style={styles.sectionTag}>Su / Ad\u0131m / Antrenman</Text>
           </View>
           {['water', 'steps', 'workout'].map((key) => (
             <View
@@ -613,7 +613,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
             >
               <Text style={styles.reminderLabel}>
                 {key === 'water' && 'Su bildirimi'}
-                {key === 'steps' && 'Ad─▒m bildirimi'}
+                {key === 'steps' && 'Ad\u0131m bildirimi'}
                 {key === 'workout' && 'Antrenman bildirimi'}
               </Text>
               <Switch
@@ -625,14 +625,14 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
             </View>
           ))}
           <Text style={styles.reminderHint}>
-            Bildirimler yerel olarak planlanacak. Expo Notifications ekleyerek ger├gek hat─▒rlatmalara ge├gebilirsin.
+            Bildirimler yerel olarak planlanacak. Expo Notifications ekleyerek ger\u00e7ek hat\u0131rlatmalara ge\u00e7ebilirsin.
           </Text>
         </View>
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Son 7 g├╝n</Text>
-            <Text style={styles.sectionTag}>G├╝nl├╝k skor</Text>
+            <Text style={styles.sectionTitle}>Son 7 g\u00fcn</Text>
+            <Text style={styles.sectionTag}>G\u00fcnl\u00fck skor</Text>
           </View>
           <View style={styles.historyList}>
             {last7Days.map((day) => (
@@ -649,21 +649,21 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Bug├╝nk├╝ ├Ânerin</Text>
-            <Text style={styles.sectionTag}>Full body ÔCó 35 dk</Text>
+            <Text style={styles.sectionTitle}>Bug\u00fcnk\u00fc \u00f6nerin</Text>
+            <Text style={styles.sectionTag}>Full body \u2022 35 dk</Text>
           </View>
 
-          <Text style={styles.programTitle}>FitAdvisor G├╝n 3</Text>
+          <Text style={styles.programTitle}>FitAdvisor G\u00fcn 3</Text>
           <Text style={styles.programSubtitle}>
-            Is─▒nma, temel kuvvet ve hafif kardiyo ile dengeli bir seans.
+            Is\u0131nma, temel kuvvet ve hafif kardiyo ile dengeli bir seans.
           </Text>
 
           <View style={styles.programList}>
             <View style={styles.programItem}>
               <View style={styles.dot} />
               <View style={styles.programTextGroup}>
-                <Text style={styles.programItemTitle}>5 dk hafif y├╝r├╝y├╝┼s</Text>
-                <Text style={styles.programItemMeta}>Is─▒nma ÔCó d├╝┼s├╝k tempo</Text>
+                <Text style={styles.programItemTitle}>5 dk hafif y\u00fcr\u00fcy\u00fc\u015f</Text>
+                <Text style={styles.programItemMeta}>Is\u0131nma \u2022 d\u00fc\u015f\u00fck tempo</Text>
               </View>
             </View>
 
@@ -671,7 +671,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
               <View style={styles.dot} />
               <View style={styles.programTextGroup}>
                 <Text style={styles.programItemTitle}>Squat + Push-up</Text>
-                <Text style={styles.programItemMeta}>3 set ÔCó 12 tekrar</Text>
+                <Text style={styles.programItemMeta}>3 set \u2022 12 tekrar</Text>
               </View>
             </View>
 
@@ -679,7 +679,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
               <View style={styles.dot} />
               <View style={styles.programTextGroup}>
                 <Text style={styles.programItemTitle}>Plank</Text>
-                <Text style={styles.programItemMeta}>3 set ÔCó 30 sn</Text>
+                <Text style={styles.programItemMeta}>3 set \u2022 30 sn</Text>
               </View>
             </View>
           </View>

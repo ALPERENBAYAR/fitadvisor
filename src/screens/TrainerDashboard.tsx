@@ -2,8 +2,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Image,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 import {
   getDailyCalories,
@@ -23,6 +32,8 @@ type TrainerSession = {
   profilePhoto?: string | null;
 };
 
+type StudentCalories = Record<string, { total: number; entries: any[] }>;
+
 export default function TrainerDashboard() {
   const router = useRouter();
   const [session, setSession] = useState<TrainerSession | null>(null);
@@ -30,7 +41,11 @@ export default function TrainerDashboard() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [photo, setPhoto] = useState<string | null>(null);
-  const [studentCalories, setStudentCalories] = useState<Record<string, { total: number; entries: any[] }>>({});
+  const [studentCalories, setStudentCalories] = useState<StudentCalories>({});
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'notifications' | 'messages' | 'students'>(
+    'overview'
+  );
 
   const loadDashboard = async () => {
     try {
@@ -47,7 +62,7 @@ export default function TrainerDashboard() {
       setStudents(studentsData);
 
       const today = new Date().toISOString().slice(0, 10);
-      const calorieMap: Record<string, { total: number; entries: any[] }> = {};
+      const calorieMap: StudentCalories = {};
       for (const s of studentsData) {
         if (s.id) {
           const cal = await getDailyCalories(s.id, today);
@@ -59,19 +74,27 @@ export default function TrainerDashboard() {
       setStudentCalories(calorieMap);
 
       const notifData = await getNotificationsForTrainer(parsed.trainerId);
-      const sortedNotifs = notifData.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
+      const sortedNotifs = notifData.sort(
+        (a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0)
+      );
       setNotifications(sortedNotifs);
 
       const msgData = await getTrainerMessages(parsed.trainerId, 10);
       setMessages(msgData);
     } catch {
-      // ignore
+      // sessizce geç
     }
   };
 
   useEffect(() => {
     loadDashboard();
   }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadDashboard();
+    setRefreshing(false);
+  };
 
   const handlePickPhoto = async () => {
     if (!session?.trainerId) return;
@@ -93,16 +116,32 @@ export default function TrainerDashboard() {
     }
   };
 
-  const clearNotification = async (notifId: string) => {
+  const clearNotification = (notifId: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== notifId));
   };
+
+  const metrics = useMemo(() => {
+    const totalStudents = students.length;
+    const totalNotifications = notifications.length;
+    const totalMessages = messages.length;
+    const totals = Object.values(studentCalories).map((c) => c.total || 0);
+    const totalCalories = totals.reduce((acc, n) => acc + n, 0);
+    const avgCalories = totalStudents ? Math.round(totalCalories / totalStudents) : 0;
+    const mostActive = students.reduce<any | null>((prev, s) => {
+      const total = studentCalories[s.id]?.total ?? 0;
+      if (!prev || total > (prev.total ?? 0)) return { ...s, total };
+      return prev;
+    }, null);
+    const activeToday = totals.filter((t) => t > 0).length;
+    return { totalStudents, totalNotifications, totalMessages, avgCalories, mostActive, activeToday };
+  }, [students, notifications, messages, studentCalories]);
 
   if (!session) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.container}>
           <Text style={styles.title}>Trainer Dashboard</Text>
-          <Text style={styles.subtitle}>Oturum bulunamadı. Lütfen trainer hesabınla giriş yap.</Text>
+          <Text style={styles.subtitle}>Oturum bulunamadı. Lütfen eğitmen hesabınla giriş yap.</Text>
         </View>
       </SafeAreaView>
     );
@@ -116,12 +155,18 @@ export default function TrainerDashboard() {
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
       />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#14b8a6" />}
+      >
         <View style={styles.header}>
           <View>
             <Text style={styles.kicker}>Trainer Dashboard</Text>
             <Text style={styles.title}>Hoş geldin {session.name}</Text>
-            <Text style={styles.subtitle}>Sadece sana bağlı öğrencileri ve günlük kalorilerini görüyorsun.</Text>
+            <Text style={styles.subtitle}>
+              Sana bağlı öğrencileri, günlük kalorilerini ve son bildirimleri tek ekranda yönet.
+            </Text>
           </View>
           <View style={styles.headerBadge}>
             <Text style={styles.badgeLabel}>Öğrenci</Text>
@@ -153,118 +198,168 @@ export default function TrainerDashboard() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.quickRow}>
-          <TouchableOpacity style={styles.quickButton} onPress={() => router.push('/trainer-messages')}>
-            <Text style={styles.quickText}>Mesajlar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickButton} onPress={() => router.push('/trainer-students')}>
-            <Text style={styles.quickText}>Öğrenciler</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickButton} onPress={() => router.push('/trainer-notifications')}>
-            <Text style={styles.quickText}>Bildirimler</Text>
-          </TouchableOpacity>
+        <View style={styles.tabRow}>
+          {[
+            { key: 'overview', label: 'Özet' },
+            { key: 'notifications', label: 'Bildirimler' },
+            { key: 'messages', label: 'Mesajlar' },
+            { key: 'students', label: 'Öğrenciler' },
+          ].map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]}
+              onPress={() => setActiveTab(tab.key as any)}
+            >
+              <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        <View style={styles.metricsRow}>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricValue}>{students.length}</Text>
-            <Text style={styles.metricLabel}>Öğrenci</Text>
-          </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricValue}>{notifications.length}</Text>
-            <Text style={styles.metricLabel}>Bildirim</Text>
-          </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricValue}>{messages.length}</Text>
-            <Text style={styles.metricLabel}>Mesaj</Text>
-          </View>
-        </View>
+        {activeTab === 'overview' && (
+          <>
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Günlük Özet</Text>
+              <View style={styles.overviewRow}>
+                <View style={styles.overviewItem}>
+                  <Text style={styles.overviewLabel}>Aktif Öğrenci</Text>
+                  <Text style={styles.overviewValue}>{metrics.activeToday}</Text>
+                </View>
+                <View style={styles.overviewItem}>
+                  <Text style={styles.overviewLabel}>Bildirim</Text>
+                  <Text style={styles.overviewValue}>{metrics.totalNotifications}</Text>
+                </View>
+                <View style={styles.overviewItem}>
+                  <Text style={styles.overviewLabel}>Mesaj</Text>
+                  <Text style={styles.overviewValue}>{metrics.totalMessages}</Text>
+                </View>
+                <View style={styles.overviewItem}>
+                  <Text style={styles.overviewLabel}>Ortalama kcal</Text>
+                  <Text style={styles.overviewValue}>{metrics.avgCalories}</Text>
+                </View>
+              </View>
+              {metrics.mostActive ? (
+                <View style={styles.highlightBox}>
+                  <Text style={styles.metaStrong}>En aktif öğrenci</Text>
+                  <Text style={styles.meta}>{metrics.mostActive.name || metrics.mostActive.username}</Text>
+                  <Text style={styles.metaSmall}>
+                    Bugün: {(metrics.mostActive.total ?? 0).toFixed(0)} kcal
+                  </Text>
+                </View>
+              ) : null}
+            </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Bildirimler</Text>
-          {notifications.length === 0 ? (
-            <Text style={styles.meta}>Yeni bildirim yok.</Text>
-          ) : (
-            notifications.map((n) => (
-              <View key={n.id} style={styles.notificationItem}>
-                <Text style={styles.metaStrong}>Yeni atama isteği: {n.userName || 'Bilinmeyen kullanıcı'}</Text>
-                <Text style={styles.metaSmall}>
-                  Hedef: {n.userGoal || '-'} • Tarih: {new Date(n.createdAt).toLocaleString()}
-                </Text>
-                <TouchableOpacity style={styles.clearButton} onPress={() => clearNotification(n.id)}>
-                  <Text style={styles.clearButtonText}>Okundu</Text>
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Hızlı İşlemler</Text>
+              <View style={styles.quickRow}>
+                <TouchableOpacity style={styles.quickButton} onPress={() => router.push('/trainer-messages')}>
+                  <Text style={styles.quickText}>Mesaj gönder</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickButton} onPress={() => router.push('/trainer-students')}>
+                  <Text style={styles.quickText}>Öğrenci yönet</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickButton} onPress={handleRefresh}>
+                  <Text style={styles.quickText}>Yenile</Text>
                 </TouchableOpacity>
               </View>
-            ))
-          )}
-        </View>
+            </View>
+          </>
+        )}
 
-        <View style={styles.card}>
-          <View style={styles.headerRow}>
-            <Text style={styles.sectionTitle}>Son Mesajlar</Text>
-            <TouchableOpacity style={styles.linkButton} onPress={() => router.push('/trainer-messages')}>
-              <Text style={styles.linkButtonText}>Mesaj kutusuna git</Text>
-            </TouchableOpacity>
-          </View>
-          {messages.length === 0 ? (
-            <Text style={styles.meta}>Mesaj bulunamadı.</Text>
-          ) : (
-            messages.map((m) => (
-              <View key={m.id} style={styles.notificationItem}>
-                <Text style={styles.metaStrong}>
-                  {m.senderId === session.trainerId ? 'Sen → Öğrenci' : 'Öğrenci → Sen'}
-                </Text>
-                <Text style={styles.metaSmall}>{m.text}</Text>
-                <Text style={styles.metaSmall}>{new Date(m.createdAt || '').toLocaleString()}</Text>
-              </View>
-            ))
-          )}
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.headerRow}>
-            <Text style={styles.sectionTitle}>Öğrenciler</Text>
-            <TouchableOpacity style={styles.linkButton} onPress={() => router.push('/trainer-students')}>
-              <Text style={styles.linkButtonText}>Tam liste</Text>
-            </TouchableOpacity>
-          </View>
-          {students.length === 0 ? (
-            <Text style={styles.meta}>Henüz sana atanan öğrenci yok.</Text>
-          ) : (
-            students.map((s) => (
-              <View key={s.id} style={styles.studentItem}>
-                <View style={styles.studentHeader}>
-                  {s.profilePhoto ? (
-                    <Image source={{ uri: s.profilePhoto }} style={styles.studentAvatar} />
-                  ) : (
-                    <View style={[styles.studentAvatar, styles.avatarFallback]}>
-                      <Text style={styles.avatarInitial}>{(s.name || s.username || '?')[0]?.toUpperCase?.() || 'Ö'}</Text>
-                    </View>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.studentName}>{s.name || s.username || 'İsimsiz'}</Text>
-                    <Text style={styles.metaSmall}>
-                      Yaş: {s.age || '-'} • Hedef: {s.goal || s.goalType || '-'} • Program: {s.programId || '-'}
-                    </Text>
-                    <Text style={styles.metaSmall}>Bugün: {(studentCalories[s.id]?.total ?? 0).toFixed(0)} kcal</Text>
-                  </View>
+        {activeTab === 'notifications' && (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Bildirimler</Text>
+            {notifications.length === 0 ? (
+              <Text style={styles.meta}>Yeni bildirim yok.</Text>
+            ) : (
+              notifications.map((n) => (
+                <View key={n.id} style={styles.notificationItem}>
+                  <Text style={styles.metaStrong}>Yeni atama isteği: {n.userName || 'Bilinmeyen kullanıcı'}</Text>
+                  <Text style={styles.metaSmall}>
+                    Hedef: {n.userGoal || '-'} • Tarih: {new Date(n.createdAt).toLocaleString()}
+                  </Text>
+                  <TouchableOpacity style={styles.clearButton} onPress={() => clearNotification(n.id)}>
+                    <Text style={styles.clearButtonText}>Okundu</Text>
+                  </TouchableOpacity>
                 </View>
-                {studentCalories[s.id]?.entries?.length ? (
-                  <View style={{ marginTop: 6, gap: 4 }}>
-                    {studentCalories[s.id].entries.map((e: any, idx: number) => (
-                      <View key={`${s.id}-cal-${idx}`} style={styles.foodRow}>
-                        <Text style={styles.metaSmall}>{e.description || 'Öğe'}</Text>
-                        <Text style={styles.metaSmall}>
-                          {Math.round(e.calories || 0)} kcal{e.grams ? ` (${e.grams} g)` : ''}
+              ))
+            )}
+          </View>
+        )}
+
+        {activeTab === 'messages' && (
+          <View style={styles.card}>
+            <View style={styles.headerRow}>
+              <Text style={styles.sectionTitle}>Son Mesajlar</Text>
+              <TouchableOpacity style={styles.linkButton} onPress={() => router.push('/trainer-messages')}>
+                <Text style={styles.linkButtonText}>Mesaj kutusuna git</Text>
+              </TouchableOpacity>
+            </View>
+            {messages.length === 0 ? (
+              <Text style={styles.meta}>Mesaj bulunamadı.</Text>
+            ) : (
+              messages.map((m) => (
+                <View key={m.id} style={styles.notificationItem}>
+                  <Text style={styles.metaStrong}>
+                    {m.senderId === session.trainerId ? 'Sen ➝ Öğrenci' : 'Öğrenci ➝ Sen'}
+                  </Text>
+                  <Text style={styles.metaSmall}>{m.text}</Text>
+                  <Text style={styles.metaSmall}>{new Date(m.createdAt || '').toLocaleString()}</Text>
+                </View>
+              ))
+            )}
+          </View>
+        )}
+
+        {activeTab === 'students' && (
+          <View style={styles.card}>
+            <View style={styles.headerRow}>
+              <Text style={styles.sectionTitle}>Öğrenciler</Text>
+              <TouchableOpacity style={styles.linkButton} onPress={() => router.push('/trainer-students')}>
+                <Text style={styles.linkButtonText}>Tam liste</Text>
+              </TouchableOpacity>
+            </View>
+            {students.length === 0 ? (
+              <Text style={styles.meta}>Henüz sana atanan öğrenci yok.</Text>
+            ) : (
+              students.map((s) => (
+                <View key={s.id} style={styles.studentItem}>
+                  <View style={styles.studentHeader}>
+                    {s.profilePhoto ? (
+                      <Image source={{ uri: s.profilePhoto }} style={styles.studentAvatar} />
+                    ) : (
+                      <View style={[styles.studentAvatar, styles.avatarFallback]}>
+                        <Text style={styles.avatarInitial}>
+                          {(s.name || s.username || '?')[0]?.toUpperCase?.() || 'Ö'}
                         </Text>
                       </View>
-                    ))}
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.studentName}>{s.name || s.username || 'İsimsiz'}</Text>
+                      <Text style={styles.metaSmall}>
+                        Yaş: {s.age || '-'} • Hedef: {s.goal || s.goalType || '-'} • Program: {s.programId || '-'}
+                      </Text>
+                      <Text style={styles.metaSmall}>
+                        Bugün: {(studentCalories[s.id]?.total ?? 0).toFixed(0)} kcal
+                      </Text>
+                    </View>
                   </View>
-                ) : null}
-              </View>
-            ))
-          )}
-        </View>
+                  {studentCalories[s.id]?.entries?.length ? (
+                    <View style={{ marginTop: 6, gap: 4 }}>
+                      {studentCalories[s.id].entries.map((e: any, idx: number) => (
+                        <View key={`${s.id}-cal-${idx}`} style={styles.foodRow}>
+                          <Text style={styles.metaSmall}>{e.description || 'Öğe'}</Text>
+                          <Text style={styles.metaSmall}>
+                            {Math.round(e.calories || 0)} kcal{e.grams ? ` (${e.grams} g)` : ''}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              ))
+            )}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -309,19 +404,10 @@ const styles = StyleSheet.create({
     borderColor: '#16a34a',
     backgroundColor: '#1f2937',
   },
-  avatarFallback: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  avatarFallback: { justifyContent: 'center', alignItems: 'center' },
   avatarInitial: { fontSize: 24, color: '#e2e8f0' },
-  photoButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  photoButtonInner: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
+  photoButton: { borderRadius: 12, overflow: 'hidden' },
+  photoButtonInner: { paddingHorizontal: 12, paddingVertical: 8 },
   photoButtonText: { color: '#0b1120', fontWeight: '800' },
   quickRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
   quickButton: {
@@ -364,12 +450,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: '#e2e8f0' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  linkButton: {
-    backgroundColor: '#0ea5e9',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
+  linkButton: { backgroundColor: '#0ea5e9', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   linkButtonText: { fontSize: 12, color: '#0b1120', fontWeight: '700' },
   meta: { fontSize: 13, color: '#cbd5e1' },
   metaStrong: { fontSize: 13, color: '#e2e8f0', fontWeight: '700' },
@@ -384,6 +465,49 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   clearButtonText: { fontSize: 12, color: '#0b1120', fontWeight: '700' },
+  tabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#0f1a2f',
+    padding: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.2)',
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  tabButtonActive: {
+    backgroundColor: 'rgba(20,184,166,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(20,184,166,0.4)',
+  },
+  tabText: { color: '#cbd5e1', fontWeight: '600' },
+  tabTextActive: { color: '#14b8a6' },
+  overviewRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  overviewItem: {
+    flexGrow: 1,
+    minWidth: '45%',
+    backgroundColor: '#0f1a2f',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+  },
+  overviewLabel: { fontSize: 12, color: '#94a3b8' },
+  overviewValue: { fontSize: 18, fontWeight: '800', color: '#f8fafc' },
+  highlightBox: {
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(14,165,233,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(14,165,233,0.2)',
+    gap: 4,
+  },
   studentItem: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#1f2937', gap: 2 },
   studentHeader: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   studentAvatar: {

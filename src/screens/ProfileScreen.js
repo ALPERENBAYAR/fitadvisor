@@ -43,7 +43,7 @@ export default function ProfileScreen({ profile, onUpdateProfile }) {
 
     if (typeof onUpdateProfile === 'function') {
       onUpdateProfile(updated);
-      setSavedMessage('Profil bilgilerin guncellendi.');
+      setSavedMessage('Profil bilgilerin üncellendi.');
       setTimeout(() => setSavedMessage(''), 2000);
     }
   };
@@ -98,8 +98,8 @@ export default function ProfileScreen({ profile, onUpdateProfile }) {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>Profil</Text>
         <Text style={styles.subtitle}>
-          Kiºisel bilgilerini ve hedeflerini guncellediÄinde, gÃ¼nlÃ¼k hedeflerin ve analizlerin de
-          buna gÃ¶re yenilenir.
+          Kişisel bilgilerini ve hedeflerini güncellediğinde, günlük hedeflerin ve analizlerin de
+          buna göre yenilenir.
         </Text>
 
         <View style={styles.avatarContainer}>
@@ -120,7 +120,7 @@ export default function ProfileScreen({ profile, onUpdateProfile }) {
 
           <View style={styles.row}>
             <View style={styles.rowItem}>
-              <Text style={styles.label}>YaÅŸ</Text>
+              <Text style={styles.label}>Yaş</Text>
               <TextInput
                 value={age}
                 onChangeText={setAge}
