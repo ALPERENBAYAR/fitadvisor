@@ -87,11 +87,20 @@ export type DailyCalories = {
   updatedAt?: any;
 };
 
+export type FormLogEntry = {
+  userId: string;
+  date: string;
+  status: string;
+  photoBase64?: string | null;
+  createdAt?: any;
+};
+
 const usersCol = collection(firebaseDb, 'users');
 const trainersCol = collection(firebaseDb, 'trainers');
 const messagesCol = collection(firebaseDb, 'messages');
 const notificationsCol = collection(firebaseDb, 'notifications');
 const caloriesCol = collection(firebaseDb, 'calories');
+const formEntriesCol = collection(firebaseDb, 'formEntries');
 
 const usernameToEmail = (username: string) => `${username.trim().toLowerCase()}@fitadvisor.local`;
 
@@ -283,6 +292,39 @@ export const saveDailyCalories = async (payload: DailyCalories) => {
     { merge: true }
   );
   return { ok: true };
+};
+
+export const saveFormEntry = async (payload: FormLogEntry) => {
+  await addDoc(formEntriesCol, {
+    userId: payload.userId,
+    date: payload.date,
+    status: payload.status,
+    photoBase64: payload.photoBase64 || null,
+    createdAt: serverTimestamp(),
+  });
+  return { ok: true };
+};
+
+export const getFormEntriesForUser = async (userId: string, max = 20) => {
+  const q = query(
+    formEntriesCol,
+    where('userId', '==', userId),
+    orderBy('createdAt', 'desc'),
+    limit(max)
+  );
+  const snap = await getDocs(q);
+  const items: FormLogEntry[] = [];
+  snap.forEach((docSnap) => {
+    const data = docSnap.data() as any;
+    items.push({
+      userId: data.userId,
+      date: data.date,
+      status: data.status,
+      photoBase64: data.photoBase64 || null,
+      createdAt: data.createdAt?.toMillis?.() ?? data.createdAt ?? timestampNow(),
+    });
+  });
+  return items;
 };
 
 export const getDailyCalories = async (userId: string, date: string) => {

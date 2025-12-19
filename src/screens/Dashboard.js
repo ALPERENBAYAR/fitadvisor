@@ -23,6 +23,7 @@ const STORAGE_TODAY_KEY = 'fitadvisor:todayStats';
 const STORAGE_HISTORY_KEY = 'fitadvisor:history';
 const STORAGE_DATA_SOURCE_KEY = 'fitadvisor:dataSource';
 const STORAGE_REMINDERS_KEY = 'fitadvisor:reminders';
+const STORAGE_FORM_LOG_KEY = 'fitadvisor:formLog';
 
 function computeScore(stats) {
   if (!stats) return 0;
@@ -39,9 +40,11 @@ function updateHistory(prevHistory, todayId, score) {
   return [...filtered, { date: todayId, score }];
 }
 
+const FORM_TYPE_OPTIONS = ['Fit', 'Bulk', 'Cut'];
+
 export default function Dashboard({ profile, goals, selectedProgram }) {
   const [imageUri, setImageUri] = useState(null);
-  const [analysisText, setAnalysisText] = useState('\u015eimdilik \u00f6rnek bir analiz g\u00f6steriliyor.');
+  const [analysisText, setAnalysisText] = useState('Şimdilik örnek bir analiz gösteriliyor.');
   const [analysisStatus, setAnalysisStatus] = useState('idle'); // idle | loading | ready | error
   const userName = profile?.name || 'Alperen';
 
@@ -66,6 +69,9 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
   const [foodResults, setFoodResults] = useState([]);
   const [foodStatus, setFoodStatus] = useState('idle'); // idle | loading | error
   const [foodError, setFoodError] = useState('');
+  const [formEntries, setFormEntries] = useState([]);
+  const [formType, setFormType] = useState(FORM_TYPE_OPTIONS[0]);
+  const [formError, setFormError] = useState('');
 
   const usdaApiKey = getUsdaApiKey();
 
@@ -81,21 +87,21 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
   }
 
   let bmiLabel = '';
-  let bmiComment = 'Profil bilgilerinle daha net bir analiz \u00e7\u0131karaca\u011f\u0131z.';
+  let bmiComment = 'Profil bilgilerinle daha net bir analiz çıkaracağız.';
 
   if (bmi) {
     if (bmi < 18.5) {
-      bmiLabel = 'Zay\u0131f';
-      bmiComment = 'Biraz kilo alman ve kas k\u00fctleni art\u0131rman faydal\u0131 olabilir.';
+      bmiLabel = 'Zayıf';
+      bmiComment = 'Biraz kilo alman ve kas kütleni artırman faydalı olabilir.';
     } else if (bmi < 25) {
       bmiLabel = 'Normal';
-      bmiComment = 'Sa\u011fl\u0131kl\u0131 aral\u0131ktas\u0131n, hedefini korumaya odaklanabilirsin.';
+      bmiComment = 'Sağlıklı aralıktasın, hedefini korumaya odaklanabilirsin.';
     } else if (bmi < 30) {
       bmiLabel = 'Fazla kilolu';
-      bmiComment = 'D\u00fczenli ad\u0131m ve antrenmanla ya\u011f oran\u0131n\u0131 d\u00fc\u015f\u00fcrmeye odaklan.';
+      bmiComment = 'Düzenli adım ve antrenmanla yağ oranını düşürmeye odaklan.';
     } else {
       bmiLabel = 'Obezite';
-      bmiComment = 'Daha kontroll\u00fc bir program ve doktor deste\u011fiyle \u00e7al\u0131\u015fmak \u00f6nemli.';
+      bmiComment = 'Daha kontrollü bir program ve doktor desteğiyle çalışmak önemli.';
     }
   }
 
@@ -136,6 +142,18 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
     setDataSource('manual');
   };
 
+  const normalizeFoodQuery = (text) =>
+    text
+      .toLowerCase()
+      .replace(/ğ/g, 'g')
+      .replace(/ü/g, 'u')
+      .replace(/ş/g, 's')
+      .replace(/ı/g, 'i')
+      .replace(/ö/g, 'o')
+      .replace(/ç/g, 'c')
+      .replace(/\s+/g, ' ')
+      .trim();
+
   const handleSearchFood = async () => {
     if (!foodQuery.trim()) {
       setFoodError('Bir besin adı yaz.');
@@ -147,32 +165,61 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
     }
     setFoodStatus('loading');
     setFoodError('');
-    try {
+    const rawQuery = foodQuery.trim();
+    const fallbackQuery = normalizeFoodQuery(rawQuery);
+
+    const searchOnce = async (q) => {
       const res = await fetch(
-        `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(foodQuery.trim())}&pageSize=5&api_key=${usdaApiKey}`
+        `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(q)}&pageSize=5&api_key=${usdaApiKey}`
       );
       if (!res.ok) {
         setFoodError('USDA isteği başarısız.');
         setFoodStatus('error');
-        return;
+        return null;
       }
       const data = await res.json();
       const foods = Array.isArray(data?.foods) ? data.foods : [];
       const mapped = foods.map((f) => {
         const nutrient =
-          (f.foodNutrients || []).find(
-            (n) =>
-              typeof n?.nutrientName === 'string' &&
-              n.nutrientName.toLowerCase().includes('energy') &&
-              (n.unitName || '').toLowerCase() === 'kcal'
-          ) || {};
+          (f.foodNutrients || []).find((n) => {
+            const name = (n?.nutrientName || '').toLowerCase();
+            const unit = (n?.unitName || '').toLowerCase();
+            const number = String(n?.nutrientNumber || '');
+            const isEnergy = name.includes('energy') || number === '208';
+            return isEnergy && (unit.includes('kcal') || unit.includes('kj'));
+          }) || {};
+
+        let calories = Number(nutrient.value) || 0;
+        if (calories === 0 && f?.labelNutrients?.calories?.value) {
+          calories = Number(f.labelNutrients.calories.value) || 0;
+        }
+        if (calories === 0 && nutrient.unitName && nutrient.unitName.toLowerCase().includes('kj')) {
+          calories = Math.round(Number(nutrient.value || 0) / 4.184);
+        }
+
         return {
           id: f.fdcId || f.description,
           description: f.description || 'Bilinmeyen',
           brand: f.brandOwner || f.brandName || '',
-          calories: nutrient.value || 0,
+          calories,
         };
       });
+      return mapped;
+    };
+
+    try {
+      let mapped = await searchOnce(rawQuery);
+
+      if ((!mapped || mapped.length === 0) && fallbackQuery !== rawQuery) {
+        mapped = await searchOnce(fallbackQuery);
+      }
+
+      if (!mapped || mapped.length === 0) {
+        setFoodError('Sonuç bulunamadı. İngilizce isim veya farklı yazım deneyin ya da Manuel ekle kullanın.');
+        setFoodStatus('error');
+        return;
+      }
+
       setFoodResults(mapped);
       setFoodStatus('idle');
     } catch (e) {
@@ -191,13 +238,13 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
   const handleRunAnalysis = async () => {
     if (!bmi) {
       setAnalysisStatus('error');
-      setAnalysisText('\u015eimdilik \u00f6rnek bir analiz g\u00f6steriliyor.');
+      setAnalysisText('Şimdilik örnek bir analiz gösteriliyor.');
       return;
     }
 
     setAnalysisStatus('loading');
 
-    // Backend analyze kapal\u0131; lokal analiz metni kullan\u0131l\u0131yor.
+    // Backend analyze kapalı; lokal analiz metni kullanılıyor.
 
     const goal = profile?.goalType;
     let text = '';
@@ -205,40 +252,40 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
     if (goal === 'gain_muscle') {
       if (bmi < 22) {
         text =
-          'Kas kazanmak i\u00e7in nispeten zay\u0131f say\u0131labilecek bir aral\u0131ktas\u0131n. D\u00fczenli kuvvet antrenman\u0131 ve dengeli beslenme kas k\u00fctleni art\u0131rmana yard\u0131m edecek.';
+          'Kas kazanmak için nispeten zayıf sayılabilecek bir aralıktasın. Düzenli kuvvet antrenmanı ve dengeli beslenme kas kütleni artırmana yardım edecek.';
       } else if (bmi < 27) {
         text =
-          'Kas kazanmak i\u00e7in uygun bir aral\u0131ktas\u0131n. A\u011f\u0131rl\u0131k antrenmanlar\u0131n\u0131 d\u00fczenli tutman ve toparlanmaya dikkat etmen yeterli.';
+          'Kas kazanmak için uygun bir aralıktasın. Ağırlık antrenmanlarını düzenli tutman ve toparlanmaya dikkat etmen yeterli.';
       } else {
         text =
-          'Kas kazanma hedefin var; \u00f6nce hafif bir ya\u011f azaltma d\u00f6nemi ile eklemlere y\u00fck\u00fc azaltmak daha konforlu olabilir.';
+          'Kas kazanma hedefin var; önce hafif bir yağ azaltma dönemi ile eklemlere yükü azaltmak daha konforlu olabilir.';
       }
     } else if (goal === 'maintain') {
       if (bmi < 18.5) {
         text =
-          'Formu koruma hedefi i\u00e7in kilon alt s\u0131n\u0131rda. Biraz daha g\u00fc\u00e7l\u00fc kas k\u00fctlesi ve yeterli kalori almak seni daha dengeli hissettirebilir.';
+          'Formu koruma hedefi için kilon alt sınırda. Biraz daha güçlü kas kütlesi ve yeterli kalori almak seni daha dengeli hissettirebilir.';
       } else if (bmi < 25) {
         text =
-          'Formunu koruma a\u00e7\u0131s\u0131ndan iyi bir aral\u0131ktas\u0131n. D\u00fczenli ad\u0131m, hafif kuvvet ve esneme \u00e7al\u0131\u015fmalar\u0131 bu durumu s\u00fcrd\u00fcrmeni sa\u011flar.';
+          'Formunu koruma açısından iyi bir aralıktasın. Düzenli adım, hafif kuvvet ve esneme çalışmaları bu durumu sürdürmeni sağlar.';
       } else {
         text =
-          'Formu koruma hedefinde v\u00fc\u00e7ut kompozisyonunu biraz hafifletmek konforunu art\u0131rabilir; sakin tempolu kilo verme uygun g\u00f6r\u00fcn\u00fcyor.';
+          'Formu koruma hedefinde vücut kompozisyonunu biraz hafifletmek konforunu artırabilir; sakin tempolu kilo verme uygun görünüyor.';
       }
     } else {
       if (bmi < 25) {
         text =
-          'Kilo verme hedefin var ama BMI aral\u0131\u011f\u0131n fena de\u011fil. V\u00fccudu s\u0131k\u0131la\u015ft\u0131rmaya, kas korumaya ve sa\u011fl\u0131kl\u0131 beslenmeye odaklanmak yeterli olabilir.';
+          'Kilo verme hedefin var ama BMI aralığın fena değil. Vücudu sıkılaştırmaya, kas korumaya ve sağlıklı beslenmeye odaklanmak yeterli olabilir.';
       } else if (bmi < 30) {
         text =
-          'Kilo verme hedefin i\u00e7in y\u00fcr\u00fcy\u00fc\u015f, hafif ko\u015fu ve kuvvet egzersizlerini birle\u015ftirmek ya\u011f oran\u0131n\u0131 istikrarl\u0131 \u015fekilde azaltmana yard\u0131mc\u0131 olur.';
+          'Kilo verme hedefin için yürüyüş, hafif koşu ve kuvvet egzersizlerini birleştirmek yağ oranını istikrarlı şekilde azaltmana yardımcı olur.';
       } else {
         text =
-          'Kilo verme s\u00fcrecinde yava\u015f ve s\u00fcrd\u00fcr\u00fclebilir ilerlemek en sa\u011fl\u0131kl\u0131s\u0131. D\u00fczenli hareket, uyku ve beslenme ile ba\u015flay\u0131p gerekirse uzman deste\u011fi ekleyebilirsin.';
+          'Kilo verme sürecinde yavaş ve sürdürülebilir ilerlemek en sağlıklısı. Düzenli hareket, uyku ve beslenme ile başlayıp gerekirse uzman desteği ekleyebilirsin.';
       }
     }
 
     if (selectedProgram?.title) {
-      text += ` Se\u00e7ili program\u0131n (${selectedProgram.title}) bu hedefe destek olacak \u015fekilde yap\u0131land\u0131r\u0131ld\u0131.`;
+      text += ` Seçili programın (${selectedProgram.title}) bu hedefe destek olacak şekilde yapılandırıldı.`;
     }
 
     setAnalysisText(text);
@@ -282,6 +329,14 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
           const parsed = JSON.parse(storedReminders);
           if (parsed) {
             setReminders(parsed);
+          }
+        }
+
+        const storedFormLog = await AsyncStorage.getItem(STORAGE_FORM_LOG_KEY);
+        if (storedFormLog) {
+          const parsed = JSON.parse(storedFormLog);
+          if (Array.isArray(parsed)) {
+            setFormEntries(parsed);
           }
         }
       } catch (e) {
@@ -328,6 +383,18 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
     persistReminders();
   }, [reminders]);
 
+  useEffect(() => {
+    const persistFormLog = async () => {
+      try {
+        await AsyncStorage.setItem(STORAGE_FORM_LOG_KEY, JSON.stringify(formEntries));
+      } catch (e) {
+        // Non-blocking
+      }
+    };
+
+    persistFormLog();
+  }, [formEntries]);
+
   const handlePickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -350,6 +417,24 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
   const markAsSynced = () => setDataSource('synced');
 
+  const addFormLog = () => {
+    const todayString = todayId;
+    const cleanStatus = formType?.trim();
+
+    if (!cleanStatus) {
+      setFormError('Form bilgisini seç.');
+      return;
+    }
+
+    setFormError('');
+    const entry = {
+      date: todayString,
+      status: cleanStatus,
+      createdAt: Date.now(),
+    };
+    setFormEntries((prev) => [entry, ...prev].slice(0, 20));
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <LinearGradient colors={['#0b1630','#0c1f40','#0e264d']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroOverlay} />
@@ -360,11 +445,11 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
         <View style={styles.headerRow}>
           <View style={styles.headerTextGroup}>
             <Text style={styles.greeting}>Merhaba, {userName}</Text>
-            <Text style={styles.subtitle}>Bug\u00fcnk\u00fc sa\u011fl\u0131k \u00f6zetin haz\u0131r.</Text>
+            <Text style={styles.subtitle}>Bugünkü sağlık özetin hazır.</Text>
             <View style={styles.chipRow}>
               <View style={styles.chip}>
                 <Text style={styles.chipText}>
-                  Veri kayna\u011f\u0131: {dataSource === 'synced' ? 'Senkron' : 'Manuel'}
+                  Veri kaynağı: {dataSource === 'synced' ? 'Senkron' : 'Manuel'}
                 </Text>
               </View>
               {selectedProgram ? (
@@ -375,7 +460,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
             </View>
           </View>
           <View style={styles.badge}>
-            <Text style={styles.badgeLabel}>G\u00fcn</Text>
+            <Text style={styles.badgeLabel}>Gün</Text>
             <Text style={styles.badgeValue}>3</Text>
           </View>
         </View>
@@ -386,18 +471,18 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
             <Text style={styles.scoreUnit}>/100</Text>
           </View>
           <View style={styles.scoreTextContainer}>
-            <Text style={styles.scoreTitle}>G\u00fcnl\u00fck sa\u011fl\u0131k skoru</Text>
+            <Text style={styles.scoreTitle}>Günlük sağlık skoru</Text>
             <Text style={styles.scoreDescription}>
-              Ad\u0131m, su ve antrenman hedeflerin tek yerde topland\u0131. Devam edersen bug\u00fcn hedefi
+              Adım, su ve antrenman hedeflerin tek yerde toplandı. Devam edersen bugün hedefi
               yakalayabilirsin.
             </Text>
             <View style={styles.dataSourceRow}>
               <Text style={styles.dataSourceValue}>
-                {dataSource === 'synced' ? 'Senkron verisi' : 'Manuel giri\u015f'}
+                {dataSource === 'synced' ? 'Senkron verisi' : 'Manuel giriş'}
               </Text>
               {dataSource !== 'synced' && (
                 <TouchableOpacity style={styles.dataSourceButton} onPress={markAsSynced}>
-                  <Text style={styles.dataSourceButtonText}>Senkron i\u015faretle</Text>
+                  <Text style={styles.dataSourceButtonText}>Senkron işaretle</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -406,52 +491,15 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>G\u00f6rsel analiz</Text>
-            {bmi && <Text style={styles.sectionTag}>BMI: {bmi.toFixed(1)} {bmiLabel ? `(${bmiLabel})` : ''}</Text>}
-          </View>
-          <View style={styles.profileRow}>
-            <Image
-              source={{ uri: imageUri ?? 'https://via.placeholder.com/120x120.png?text=You' }}
-              style={styles.profileImage}
-            />
-            <View style={styles.profileTextContainer}>
-              <Text style={styles.profileSubtitle}>
-                Foto\u011fraf\u0131na g\u00f6re duru\u015f ve kompozisyonu \u00f6zetliyoruz. {analysisText}
-              </Text>
-              <Text style={styles.bmiComment}>{bmiComment}</Text>
-              <View style={styles.profileActions}>
-                <TouchableOpacity style={styles.profileButton} onPress={handlePickImage}>
-                  <Text style={styles.profileButtonText}>Foto\u011fraf Se\u00e7</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.profileButton,
-                    styles.profileAnalyzeButton,
-                    analysisStatus === 'loading' && styles.profileButtonDisabled,
-                  ]}
-                  onPress={handleRunAnalysis}
-                  disabled={analysisStatus === 'loading'}
-                >
-                  <Text style={styles.profileButtonText}>
-                    {analysisStatus === 'loading' ? 'Analiz yap\u0131l\u0131yor...' : 'Analiz et'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Bug\u00fcnk\u00fc hedeflerin</Text>
+            <Text style={styles.sectionTitle}>Bugünkü hedeflerin</Text>
             <Text style={styles.sectionLink}>Detaylar</Text>
           </View>
 
           <View style={styles.statsRow}>
             <View style={styles.statCardWide}>
-              <Text style={styles.statLabel}>Ad\u0131m</Text>
+              <Text style={styles.statLabel}>Adım</Text>
               <Text style={styles.statValue}>{todayStats.steps}</Text>
-              <Text style={styles.statSubValue}>/ {todayStats.stepsTarget} ad\u0131m</Text>
+              <Text style={styles.statSubValue}>/ {todayStats.stepsTarget} adım</Text>
               <View style={styles.progressBarBackground}>
                 <View
                   style={[
@@ -498,17 +546,17 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>G\u00fcnl\u00fck Kalori</Text>
+            <Text style={styles.sectionTitle}>Günlük Kalori</Text>
             <Text style={styles.sectionTag}>Hedef: {todayStats.caloriesTarget} kcal</Text>
           </View>
-          <Text style={styles.subtitle}>Bug\u00fcn ald\u0131\u011f\u0131n toplam kaloriyi yaz.</Text>
+          <Text style={styles.subtitle}>Bugün aldığın toplam kaloriyi yaz.</Text>
           <View style={styles.calorieRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.statLabel}>Al\u0131nan</Text>
+              <Text style={styles.statLabel}>Alınan</Text>
               <TextInput
                 value={todayStats.calories ? String(todayStats.calories) : ''}
                 onChangeText={handleCaloriesChange}
-                placeholder="\u00f6r. 1850"
+                placeholder="ör. 1850"
                 placeholderTextColor="#94a3b8"
                 keyboardType="numeric"
                 style={styles.calorieInput}
@@ -539,14 +587,14 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>USDA ile Kalori Ara</Text>
-            {usdaApiKey ? <Text style={styles.sectionTag}>API haz\u0131r</Text> : <Text style={styles.sectionTag}>API anahtar\u0131 eksik</Text>}
+            {usdaApiKey ? <Text style={styles.sectionTag}>API hazır</Text> : <Text style={styles.sectionTag}>API anahtarı eksik</Text>}
           </View>
           <Text style={styles.subtitle}>Besin arat, USDA FoodData Central'dan kaloriyi ekle.</Text>
           <View style={styles.foodSearchRow}>
             <TextInput
               value={foodQuery}
               onChangeText={setFoodQuery}
-              placeholder="\u00f6r. chicken breast"
+              placeholder="ör. chicken breast"
               placeholderTextColor="#9ca3af"
               style={[styles.input, { flex: 1 }]}
               autoCapitalize="none"
@@ -556,7 +604,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
               onPress={handleSearchFood}
               disabled={foodStatus === 'loading'}
             >
-              <Text style={styles.searchButtonText}>{foodStatus === 'loading' ? 'Aran\u0131yor...' : 'Ara'}</Text>
+              <Text style={styles.searchButtonText}>{foodStatus === 'loading' ? 'Aranıyor...' : 'Ara'}</Text>
             </TouchableOpacity>
           </View>
           {foodError ? <Text style={styles.message}>{foodError}</Text> : null}
@@ -567,7 +615,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.foodTitle}>{item.description}</Text>
                     <Text style={styles.foodMeta}>
-                      {item.brand ? `${item.brand} \u2022 ` : ''}{Math.round(item.calories || 0)} kcal
+                      {item.brand ? `${item.brand} • ` : ''}{Math.round(item.calories || 0)} kcal
                     </Text>
                   </View>
                   <TouchableOpacity style={styles.foodAddButton} onPress={() => addFoodEntry(item)}>
@@ -582,8 +630,8 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
         {foodEntries.length > 0 && (
           <View style={styles.card}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>G\u00fcn\u00fcn Kalori Kayd\u0131</Text>
-              <Text style={styles.sectionTag}>{foodEntries.length} \u00f6\u011fe</Text>
+              <Text style={styles.sectionTitle}>Günün Kalori Kaydı</Text>
+              <Text style={styles.sectionTag}>{foodEntries.length} öğe</Text>
             </View>
             <View style={styles.foodResults}>
               {foodEntries.map((item, index) => (
@@ -600,8 +648,8 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Hat\u0131rlatmalar</Text>
-            <Text style={styles.sectionTag}>Su / Ad\u0131m / Antrenman</Text>
+            <Text style={styles.sectionTitle}>Hatırlatmalar</Text>
+            <Text style={styles.sectionTag}>Su / Adım / Antrenman</Text>
           </View>
           {['water', 'steps', 'workout'].map((key) => (
             <View
@@ -613,7 +661,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
             >
               <Text style={styles.reminderLabel}>
                 {key === 'water' && 'Su bildirimi'}
-                {key === 'steps' && 'Ad\u0131m bildirimi'}
+                {key === 'steps' && 'Adım bildirimi'}
                 {key === 'workout' && 'Antrenman bildirimi'}
               </Text>
               <Switch
@@ -625,14 +673,14 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
             </View>
           ))}
           <Text style={styles.reminderHint}>
-            Bildirimler yerel olarak planlanacak. Expo Notifications ekleyerek ger\u00e7ek hat\u0131rlatmalara ge\u00e7ebilirsin.
+            Bildirimler yerel olarak planlanacak. Expo Notifications ekleyerek gerçek hatırlatmalara geçebilirsin.
           </Text>
         </View>
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Son 7 g\u00fcn</Text>
-            <Text style={styles.sectionTag}>G\u00fcnl\u00fck skor</Text>
+            <Text style={styles.sectionTitle}>Son 7 gün</Text>
+            <Text style={styles.sectionTag}>Günlük skor</Text>
           </View>
           <View style={styles.historyList}>
             {last7Days.map((day) => (
@@ -649,21 +697,21 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Bug\u00fcnk\u00fc \u00f6nerin</Text>
-            <Text style={styles.sectionTag}>Full body \u2022 35 dk</Text>
+            <Text style={styles.sectionTitle}>Bugünkü önerin</Text>
+            <Text style={styles.sectionTag}>Full body • 35 dk</Text>
           </View>
 
-          <Text style={styles.programTitle}>FitAdvisor G\u00fcn 3</Text>
+          <Text style={styles.programTitle}>FitAdvisor Gün 3</Text>
           <Text style={styles.programSubtitle}>
-            Is\u0131nma, temel kuvvet ve hafif kardiyo ile dengeli bir seans.
+            Isınma, temel kuvvet ve hafif kardiyo ile dengeli bir seans.
           </Text>
 
           <View style={styles.programList}>
             <View style={styles.programItem}>
               <View style={styles.dot} />
               <View style={styles.programTextGroup}>
-                <Text style={styles.programItemTitle}>5 dk hafif y\u00fcr\u00fcy\u00fc\u015f</Text>
-                <Text style={styles.programItemMeta}>Is\u0131nma \u2022 d\u00fc\u015f\u00fck tempo</Text>
+                <Text style={styles.programItemTitle}>5 dk hafif yürüyüş</Text>
+                <Text style={styles.programItemMeta}>Isınma • düşük tempo</Text>
               </View>
             </View>
 
@@ -671,7 +719,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
               <View style={styles.dot} />
               <View style={styles.programTextGroup}>
                 <Text style={styles.programItemTitle}>Squat + Push-up</Text>
-                <Text style={styles.programItemMeta}>3 set \u2022 12 tekrar</Text>
+                <Text style={styles.programItemMeta}>3 set • 12 tekrar</Text>
               </View>
             </View>
 
@@ -679,7 +727,7 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
               <View style={styles.dot} />
               <View style={styles.programTextGroup}>
                 <Text style={styles.programItemTitle}>Plank</Text>
-                <Text style={styles.programItemMeta}>3 set \u2022 30 sn</Text>
+                <Text style={styles.programItemMeta}>3 set • 30 sn</Text>
               </View>
             </View>
           </View>
@@ -1041,6 +1089,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 12,
   },
+  message: {
+    marginTop: 6,
+    color: '#fca5a5',
+    fontSize: 12,
+  },
   actionsRow: {
     flexDirection: 'row',
     gap: 8,
@@ -1058,6 +1111,97 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#e2e8f0',
     fontWeight: '600',
+  },
+  formRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  formInput: {
+    backgroundColor: '#0c1a32',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+    color: '#f8fafc',
+    fontSize: 14,
+  },
+  formButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#10b981',
+    borderRadius: 10,
+  },
+  formButtonText: {
+    color: '#0b1120',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  formDateBox: {
+    width: 120,
+    backgroundColor: '#0c1a32',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+  },
+  formDateLabel: {
+    color: '#94a3b8',
+    fontSize: 11,
+    marginBottom: 2,
+  },
+  formDateValue: {
+    color: '#e2e8f0',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  formTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  formTypeChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+    backgroundColor: '#0c1a32',
+  },
+  formTypeChipActive: {
+    backgroundColor: '#10b981',
+    borderColor: '#10b981',
+  },
+  formTypeChipText: {
+    color: '#e2e8f0',
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  formTypeChipTextActive: {
+    color: '#0b1120',
+  },
+  formList: {
+    marginTop: 8,
+    gap: 8,
+  },
+  formEntryRow: {
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#0c1a32',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+  },
+  formEntryDate: {
+    color: '#94a3b8',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  formEntryStatus: {
+    color: '#e2e8f0',
+    fontWeight: '700',
   },
   progressBarBackground: {
     marginTop: 10,

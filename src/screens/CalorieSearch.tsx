@@ -23,29 +23,48 @@ type FoodItem = {
 
 const TR_EN_MAP: Record<string, string> = {
   'tavuk göğsü': 'chicken breast',
-  'tavuk gögüs': 'chicken breast',
-  'tavuk': 'chicken',
-  'pirinç': 'rice',
-  'bulgur': 'bulgur',
-  'elma': 'apple',
-  'armut': 'pear',
-  'muz': 'banana',
-  'yumurta': 'egg',
-  'peynir': 'cheese',
-  'yoğurt': 'yogurt',
+  'tavuk gogus': 'chicken breast',
+  tavuk: 'chicken',
+  pirinç: 'rice',
+  pirinc: 'rice',
+  bulgur: 'bulgur',
+  elma: 'apple',
+  armut: 'pear',
+  muz: 'banana',
+  yumurta: 'egg',
+  peynir: 'cheese',
+  yoğurt: 'yogurt',
+  yogurt: 'yogurt',
   'ton balığı': 'tuna',
-  'somon': 'salmon',
-  'patates': 'potato',
-  'mercimek': 'lentils',
-  'fasulye': 'beans',
-  'nohut': 'chickpeas',
-  'yulaf': 'oats',
+  tonbaligi: 'tuna',
+  somon: 'salmon',
+  patates: 'potato',
+  mercimek: 'lentils',
+  fasulye: 'beans',
+  nohut: 'chickpeas',
+  yulaf: 'oats',
+  ekmek: 'bread',
+  et: 'meat',
+  dana: 'beef',
+  hindi: 'turkey',
 };
 
+const normalizeQuery = (q: string) =>
+  q
+    .toLowerCase()
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ı/g, 'i')
+    .replace(/ö/g, 'o')
+    .replace(/ç/g, 'c')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const translateQuery = (q: string) => {
-  const lower = q.toLowerCase();
+  const lower = normalizeQuery(q);
   for (const [tr, en] of Object.entries(TR_EN_MAP)) {
-    if (lower.includes(tr)) {
+    if (lower.includes(normalizeQuery(tr))) {
       return en;
     }
   }
@@ -119,6 +138,26 @@ export default function CalorieSearch() {
     persist();
   }, [foodEntries, todayId, userId, totalCalories]);
 
+  const getCalories = (food: any) => {
+    const nutrient =
+      (food.foodNutrients || []).find((n: any) => {
+        const name = (n?.nutrientName || '').toLowerCase();
+        const unit = (n?.unitName || '').toLowerCase();
+        const number = String(n?.nutrientNumber || '');
+        const isEnergy = name.includes('energy') || number === '208';
+        return isEnergy && (unit.includes('kcal') || unit.includes('kj'));
+      }) || {};
+
+    let calories = Number(nutrient.value) || 0;
+    if (calories === 0 && food?.labelNutrients?.calories?.value) {
+      calories = Number(food.labelNutrients.calories.value) || 0;
+    }
+    if (calories === 0 && nutrient.unitName && nutrient.unitName.toLowerCase().includes('kj')) {
+      calories = Math.round(Number(nutrient.value || 0) / 4.184);
+    }
+    return calories;
+  };
+
   const handleSearchFood = async () => {
     if (!foodQuery.trim()) {
       setFoodError('Bir besin adı yazın.');
@@ -130,33 +169,41 @@ export default function CalorieSearch() {
     }
     setFoodStatus('loading');
     setFoodError('');
-    try {
-      const translated = translateQuery(foodQuery.trim());
+
+    const raw = foodQuery.trim();
+    const translated = translateQuery(raw);
+    const normalized = normalizeQuery(raw);
+
+    const searchOnce = async (q: string) => {
       const res = await fetch(
-        `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(translated)}&pageSize=10&api_key=${usdaApiKey}`
+        `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(q)}&pageSize=10&api_key=${usdaApiKey}`
       );
-      if (!res.ok) {
-        setFoodError('USDA isteği başarısız.');
+      if (!res.ok) return null;
+      const data = await res.json();
+      const foods = Array.isArray(data?.foods) ? data.foods : [];
+      return foods.map((f: any) => ({
+        id: f.fdcId?.toString() || f.description,
+        description: f.description || 'Bilinmeyen',
+        brand: f.brandOwner || f.brandName || '',
+        calories: getCalories(f),
+      }));
+    };
+
+    try {
+      let mapped = await searchOnce(raw);
+      if ((!mapped || mapped.length === 0) && translated !== raw) {
+        mapped = await searchOnce(translated);
+      }
+      if ((!mapped || mapped.length === 0) && normalized !== raw) {
+        mapped = await searchOnce(normalized);
+      }
+
+      if (!mapped || mapped.length === 0) {
+        setFoodError('Sonuç bulunamadı. İngilizce isim veya farklı yazım deneyin ya da Manuel ekle kullanın.');
         setFoodStatus('error');
         return;
       }
-      const data = await res.json();
-      const foods = Array.isArray(data?.foods) ? data.foods : [];
-      const mapped: FoodItem[] = foods.map((f: any) => {
-        const nutrient =
-          (f.foodNutrients || []).find(
-            (n: any) =>
-              typeof n?.nutrientName === 'string' &&
-              n.nutrientName.toLowerCase().includes('energy') &&
-              (n.unitName || '').toLowerCase() === 'kcal'
-          ) || {};
-        return {
-          id: f.fdcId?.toString() || f.description,
-          description: f.description || 'Bilinmeyen',
-          brand: f.brandOwner || f.brandName || '',
-          calories: nutrient.value || 0,
-        };
-      });
+
       setFoodResults(mapped);
       setFoodStatus('idle');
     } catch (e) {
@@ -182,21 +229,22 @@ export default function CalorieSearch() {
       setManualStatus('loading');
       try {
         const translated = translateQuery(manualName.trim());
+        const normalized = normalizeQuery(manualName.trim());
         const res = await fetch(
           `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(translated)}&pageSize=1&api_key=${usdaApiKey}`
         );
-        if (res.ok) {
-          const data = await res.json();
+        const resFallback =
+          !res.ok &&
+          (await fetch(
+            `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(normalized)}&pageSize=1&api_key=${usdaApiKey}`
+          ));
+        const finalRes = res.ok ? res : resFallback;
+
+        if (finalRes && finalRes.ok) {
+          const data = await finalRes.json();
           const first = Array.isArray(data?.foods) && data.foods.length > 0 ? data.foods[0] : null;
           if (first) {
-            const nutrient =
-              (first.foodNutrients || []).find(
-                (n: any) =>
-                  typeof n?.nutrientName === 'string' &&
-                  n.nutrientName.toLowerCase().includes('energy') &&
-                  (n.unitName || '').toLowerCase() === 'kcal'
-              ) || {};
-            const per100 = nutrient.value || 0;
+            const per100 = getCalories(first);
             const scaled = gramsVal > 0 ? (per100 * gramsVal) / 100 : per100;
             const entry: FoodItem = {
               id: first.fdcId?.toString() || first.description || manualName,
