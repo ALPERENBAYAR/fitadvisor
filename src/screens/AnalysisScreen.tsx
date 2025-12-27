@@ -15,6 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFormEntriesForUser, saveFormEntry } from '../firebase/service';
+import { apiUrl } from '../utils/api';
 
 type FormEntry = {
   date: string;
@@ -63,6 +64,23 @@ export default function AnalysisScreen() {
   const [formPhotoUri, setFormPhotoUri] = useState<string | null>(null);
   const [formPhotoBase64, setFormPhotoBase64] = useState('');
   const [userId, setUserId] = useState<string | null>(null);
+  const [steps, setSteps] = useState('8000');
+  const [avgHr, setAvgHr] = useState('78');
+  const [weight, setWeight] = useState('');
+  const [recoLoading, setRecoLoading] = useState(false);
+  const [recoError, setRecoError] = useState('');
+  const [recoResult, setRecoResult] = useState<{
+    cluster: number;
+    recommendation: {
+      title: string;
+      message: string;
+      targetSteps: number;
+      tips: string[];
+      zonePct: [number, number];
+      zoneBpmRange?: [number, number];
+      zoneNote: string;
+    };
+  } | null>(null);
 
   const todayId = new Date().toISOString().slice(0, 10);
 
@@ -95,6 +113,37 @@ export default function AnalysisScreen() {
     };
     loadSession();
   }, []);
+
+  const analyzeRecommendation = async () => {
+    const stepsNum = Number(steps);
+    const hrNum = Number(avgHr);
+    const weightNum = weight.trim() === '' ? undefined : Number(weight);
+    if (!Number.isFinite(stepsNum) || !Number.isFinite(hrNum)) {
+      setRecoError('Adim ve ortalama nabiz sayi olmali');
+      return;
+    }
+    setRecoError('');
+    setRecoLoading(true);
+    try {
+      const body: any = { steps: stepsNum, avgHr: hrNum };
+      if (Number.isFinite(weightNum)) body.weight = weightNum;
+      const res = await fetch(apiUrl('/api/recommendation/analyze'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Sunucu hatasi');
+      }
+      const data = await res.json();
+      setRecoResult(data);
+    } catch (e: any) {
+      setRecoError(e.message || 'Bilinmeyen hata');
+    } finally {
+      setRecoLoading(false);
+    }
+  };
 
   const pickImage = async () => {
     const { status: perm } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -277,6 +326,78 @@ export default function AnalysisScreen() {
             <Text style={styles.statusText}>{statusLabel}</Text>
           </View>
         </View>
+
+        <View style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.cardTitle}>Adim + Nabiz onerisi</Text>
+          </View>
+          <Text style={styles.muted}>
+            Adim ve ortalama nabiz ile kume secip hedef adim ve nabiz yogunlugunu hesapliyoruz.
+          </Text>
+          <View style={[styles.formRow, { marginTop: 8 }]}>
+            <View style={styles.formDateBox}>
+              <Text style={styles.formDateLabel}>Adim</Text>
+              <TextInput
+                value={steps}
+                onChangeText={setSteps}
+                keyboardType="numeric"
+                style={styles.input}
+                placeholder="8000"
+                placeholderTextColor="#94a3b8"
+              />
+            </View>
+            <View style={styles.formDateBox}>
+              <Text style={styles.formDateLabel}>Ortalama nabiz</Text>
+              <TextInput
+                value={avgHr}
+                onChangeText={setAvgHr}
+                keyboardType="numeric"
+                style={styles.input}
+                placeholder="78"
+                placeholderTextColor="#94a3b8"
+              />
+            </View>
+            <View style={styles.formDateBox}>
+              <Text style={styles.formDateLabel}>Kilo (kg)</Text>
+              <TextInput
+                value={weight}
+                onChangeText={setWeight}
+                keyboardType="numeric"
+                style={styles.input}
+                placeholder="70"
+                placeholderTextColor="#94a3b8"
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.profileButton, styles.profileAnalyzeButton, { paddingHorizontal: 18 }]}
+              onPress={analyzeRecommendation}
+              disabled={recoLoading}
+            >
+              {recoLoading ? (
+                <ActivityIndicator size="small" color="#0b1120" />
+              ) : (
+                <Text style={styles.profileButtonText}>Analiz et</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+          {recoError ? <Text style={styles.error}>{recoError}</Text> : null}
+          {recoResult ? (
+            <View style={{ marginTop: 10, gap: 6 }}>
+              <Text style={styles.cardTitle}>{recoResult.recommendation.title}</Text>
+              <Text style={styles.cardText}>{recoResult.recommendation.message}</Text>
+              <Text style={styles.cardText}>
+                Hedef adim: {recoResult.recommendation.targetSteps.toLocaleString('en-US')}
+              </Text>
+              <Text style={[styles.cardText, { marginTop: 4, fontWeight: '700' }]}>Ipuclari:</Text>
+              {recoResult.recommendation.tips.map((tip, idx) => (
+                <Text key={idx} style={styles.muted}>
+                  - {tip}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+        </View>
+
 
         <View style={styles.card}>
           <View style={styles.sectionHeader}>
@@ -547,6 +668,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.24)',
+  },
+  input: {
+    color: '#ffffff',
   },
   formDateLabel: {
     color: '#94a3b8',

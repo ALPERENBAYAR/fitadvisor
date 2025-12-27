@@ -1,0 +1,44 @@
+{
+  "k": 3,
+  "clusters": {
+    "1": {
+      "avgHr": 78,
+      "steps": 4200,
+      "targetSteps": 6000,
+      "title": "Hafif Baslangic",
+      "message": "Daha cok hareket icin hafif yuruyuslerle basla; ritmi yavas yavas yukselterek aliskanlik kazan.",
+      "tips": [
+        "Gun icinde 2-3 kisa yuruyus arasi ekle.",
+        "Isinma ve soguma ekle; 5-10 dakikalik hafif tempo.",
+        "Uyku ve su tuketimine dikkat et; toparlanmani hizlandirir."
+      ],
+      "zonePct": [0.5, 0.6]
+    },
+    "2": {
+      "avgHr": 78,
+      "steps": 11200,
+      "targetSteps": 12900,
+      "title": "Dengeli Aktif",
+      "message": "Tempoyu dengeli tut; haftada 2-3 tempolu yuruyus veya hafif kosu ile kapasiteyi artir.",
+      "tips": [
+        "Haftada 1-2 gun hafif interval: 2 dk hizli, 2 dk yavas x4-6.",
+        "Hidrasyon ve hafif kuvvet (core/bacak) ekleyerek sakatlanmalari onle.",
+        "Adim hedefini hafta hafta kucuk artislarla yukari tasimaya odaklan."
+      ],
+      "zonePct": [0.6, 0.7]
+    },
+    "3": {
+      "avgHr": 85,
+      "steps": 20000,
+      "targetSteps": 21000,
+      "title": "Yuksek Aktivite",
+      "message": "Yuksek hacmi korurken interval/tempo gunleri ile performansi gelistir, toparlanmaya oncelik ver.",
+      "tips": [
+        "Haftada 1 interval: 3-5 set 2-3 dk tempo + 2 dk aktif dinlenme.",
+        "Haftada 1 tempo/uzun yuruyus: konusma temposunun bir tik ustu.",
+        "Dinlenme gunu ekle; esneme/mobilite ile toparlanmayi hizlandir."
+      ],
+      "zonePct": [0.7, 0.8]
+    }
+  }
+}

@@ -20,16 +20,16 @@ export default function Index() {
         <Text style={styles.badge}>FA</Text>
         <Text style={styles.title}>FitAdvisor</Text>
         <Text style={styles.subtitle}>
-          Koyu mavi + turkuaz temayla fitness yolculuğunu seç. Kullanıcı veya Trainer girişi.
+          Koyu mavi + turkuaz temayla fitness yolculugunu surdur. Kullanici veya Trainer girisi yap.
         </Text>
 
         <View style={styles.buttonContainer}>
           <Pressable style={[styles.button, styles.primaryButton]} onPress={() => router.push('/login')}>
-            <Text style={styles.buttonText}>Kullanıcı Girişi</Text>
+            <Text style={styles.buttonText}>Kullanici Girisi</Text>
           </Pressable>
 
           <Pressable style={[styles.button, styles.secondaryButton]} onPress={() => router.push('/trainer-login')}>
-            <Text style={[styles.buttonText, styles.secondaryButtonText]}>Trainer Girişi</Text>
+            <Text style={[styles.buttonText, styles.secondaryButtonText]}>Trainer Girisi</Text>
           </Pressable>
         </View>
       </View>

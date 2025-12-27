@@ -6,12 +6,17 @@ const fs = require('fs');
 const path = require('path');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
+const { predictCluster } = require('./services/clusterPredictor');
+const { estimateMaxHr, zoneRange, ZONE_NOTE } = require('./services/hrZones');
+const clusterRules = require('./model/cluster_rules.json');
+const { buildCoachMessage } = require('./services/recommendationTextGenerator');
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
 const DATA_FILE = path.join(__dirname, 'data.json');
+let lastWatchSnapshot = null;
 
 function loadData() {
   try {
@@ -187,6 +192,111 @@ app.get('/api/trainers/:trainerId/messages', (req, res) => {
     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
     .slice(0, Number(limit) || 20);
   res.json({ ok: true, messages: trainerMsgs });
+});
+
+// Analyze HR + steps -> recommendation
+app.post('/api/recommendation/analyze', (req, res) => {
+  const { steps, avgHr, age, weight } = req.body;
+  const stepsNum = Number(steps);
+  const hrNum = Number(avgHr);
+  const ageNum = age === undefined ? undefined : Number(age);
+  const weightNum = weight === undefined ? undefined : Number(weight);
+  if (!Number.isFinite(stepsNum) || !Number.isFinite(hrNum)) {
+    return res.status(400).json({ error: 'steps and avgHr are required numbers' });
+  }
+
+  const clusterId = predictCluster({ steps: stepsNum, avgHr: hrNum });
+  const rule = clusterRules.clusters[String(clusterId)];
+  if (!rule) return res.status(500).json({ error: 'cluster rule missing' });
+
+  const zoneBpmRange = zoneRange(rule.zonePct, ageNum);
+  const dynamicTargetSteps = stepsNum + 1000;
+  const message = buildCoachMessage({
+    clusterId,
+    rule,
+    steps: stepsNum,
+    avgHr: hrNum,
+    age: Number.isFinite(ageNum) ? ageNum : undefined,
+    weight: Number.isFinite(weightNum) ? weightNum : undefined,
+    zoneBpmRange,
+    targetSteps: dynamicTargetSteps,
+  });
+  return res.json({
+    cluster: clusterId,
+    input: {
+      steps: stepsNum,
+      avgHr: hrNum,
+      age: Number.isFinite(ageNum) ? ageNum : undefined,
+      weight: Number.isFinite(weightNum) ? weightNum : undefined,
+    },
+    recommendation: {
+      title: rule.title,
+      message,
+      targetSteps: dynamicTargetSteps,
+      tips: rule.tips,
+      zonePct: rule.zonePct,
+      zoneBpmRange,
+      zoneNote: ZONE_NOTE,
+    },
+  });
+});
+
+// Optional: ingest latest watch snapshot
+app.post('/api/watch/ingest', (req, res) => {
+  const { steps, avgHr, age, weight } = req.body;
+  const stepsNum = Number(steps);
+  const hrNum = Number(avgHr);
+  const ageNum = age === undefined ? undefined : Number(age);
+  const weightNum = weight === undefined ? undefined : Number(weight);
+  if (!Number.isFinite(stepsNum) || !Number.isFinite(hrNum)) {
+    return res.status(400).json({ error: 'steps and avgHr are required numbers' });
+  }
+  lastWatchSnapshot = {
+    steps: stepsNum,
+    avgHr: hrNum,
+    age: Number.isFinite(ageNum) ? ageNum : undefined,
+    weight: Number.isFinite(weightNum) ? weightNum : undefined,
+    receivedAt: new Date().toISOString(),
+  };
+  res.json({ ok: true, latest: lastWatchSnapshot });
+});
+
+app.get('/api/watch/latest', (_req, res) => {
+  res.json({ latest: lastWatchSnapshot });
+});
+
+app.get('/api/recommendation/latest', (_req, res) => {
+  if (!lastWatchSnapshot) return res.status(404).json({ error: 'no snapshot ingested' });
+  const clusterId = predictCluster({
+    steps: lastWatchSnapshot.steps,
+    avgHr: lastWatchSnapshot.avgHr,
+  });
+  const rule = clusterRules.clusters[String(clusterId)];
+  const zoneBpmRange = zoneRange(rule.zonePct, lastWatchSnapshot.age);
+  const dynamicTargetSteps = Number.isFinite(lastWatchSnapshot.steps) ? lastWatchSnapshot.steps + 1000 : rule.targetSteps;
+  const message = buildCoachMessage({
+    clusterId,
+    rule,
+    steps: lastWatchSnapshot.steps,
+    avgHr: lastWatchSnapshot.avgHr,
+    age: lastWatchSnapshot.age,
+    weight: lastWatchSnapshot.weight,
+    zoneBpmRange,
+    targetSteps: dynamicTargetSteps,
+  });
+  return res.json({
+    cluster: clusterId,
+    input: lastWatchSnapshot,
+    recommendation: {
+      title: rule.title,
+      message,
+      targetSteps: dynamicTargetSteps,
+      tips: rule.tips,
+      zonePct: rule.zonePct,
+      zoneBpmRange,
+      zoneNote: ZONE_NOTE,
+    },
+  });
 });
 
 const PORT = process.env.PORT || 4000;
