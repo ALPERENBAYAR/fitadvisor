@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Image,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -16,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFormEntriesForUser, saveFormEntry } from '../firebase/service';
 import { apiUrl } from '../utils/api';
+import { initialize, requestPermission, readRecords, openHealthConnectSettings } from 'react-native-health-connect';
 
 type FormEntry = {
   date: string;
@@ -29,6 +31,7 @@ const { width } = Dimensions.get('window');
 const horizontalPadding = width < 380 ? 16 : 24;
 const N8N_WEBHOOK_URL = process.env.EXPO_PUBLIC_N8N_WEBHOOK_URL || '';
 const STORAGE_FORM_LOG_KEY = 'fitadvisor:formLog';
+const WATCH_SNAPSHOT_KEY = 'fitadvisor:watchSnapshot';
 const FORM_TYPE_OPTIONS = ['Fit', 'Bulk', 'Cut'];
 
 const uriToBase64 = async (uri: string) => {
@@ -67,6 +70,8 @@ export default function AnalysisScreen() {
   const [steps, setSteps] = useState('8000');
   const [avgHr, setAvgHr] = useState('78');
   const [weight, setWeight] = useState('');
+  const [watchLoading, setWatchLoading] = useState(false);
+  const [watchStatus, setWatchStatus] = useState('');
   const [recoLoading, setRecoLoading] = useState(false);
   const [recoError, setRecoError] = useState('');
   const [recoResult, setRecoResult] = useState<{
@@ -142,6 +147,71 @@ export default function AnalysisScreen() {
       setRecoError(e.message || 'Bilinmeyen hata');
     } finally {
       setRecoLoading(false);
+    }
+  };
+
+  const handleWatchSync = async () => {
+    if (Platform.OS !== 'android') {
+      setWatchStatus('Health Connect yalnizca Android icin uygundur.');
+      return;
+    }
+    setWatchLoading(true);
+    setWatchStatus('');
+    try {
+      const initialized = await initialize();
+      if (!initialized) {
+        setWatchStatus('Health Connect baslatilamadi. Uygulamayi kontrol et.');
+        openHealthConnectSettings();
+        return;
+      }
+      await requestPermission([
+        { accessType: 'read', recordType: 'Steps' },
+        { accessType: 'read', recordType: 'HeartRate' },
+      ]);
+      const endTime = new Date();
+      const startTime = new Date();
+      startTime.setHours(0, 0, 0, 0);
+      const timeRangeFilter = {
+        operator: 'between',
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+      };
+      const stepsResult: any = await readRecords('Steps', { timeRangeFilter });
+      const totalSteps = Array.isArray(stepsResult.records)
+        ? stepsResult.records.reduce((sum: number, r: any) => sum + (r.count || 0), 0)
+        : 0;
+      const hrResult: any = await readRecords('HeartRate', { timeRangeFilter });
+      const samples =
+        Array.isArray(hrResult.records)
+          ? hrResult.records.flatMap((r: any) => (Array.isArray(r.samples) ? r.samples : []))
+          : [];
+      const avg = samples.length
+        ? Math.round(samples.reduce((sum: number, s: any) => sum + (s.beatsPerMinute || 0), 0) / samples.length)
+        : null;
+
+      if (!totalSteps && !avg) {
+        setWatchStatus('Bugun icin yeterli veri bulunamadi.');
+        return;
+      }
+      if (totalSteps) setSteps(String(totalSteps));
+      if (avg) setAvgHr(String(avg));
+      setWatchStatus('Saat verisi alindi, kutular guncellendi.');
+      try {
+        await AsyncStorage.setItem(
+          WATCH_SNAPSHOT_KEY,
+          JSON.stringify({
+            steps: totalSteps || 0,
+            avgHr: avg || 0,
+            capturedAt: new Date().toISOString(),
+          })
+        );
+      } catch {
+        // ignore
+      }
+    } catch (e: any) {
+      setWatchStatus(e?.message || 'Health Connect baglantisinda hata oldu.');
+    } finally {
+      setWatchLoading(false);
     }
   };
 
@@ -379,6 +449,20 @@ export default function AnalysisScreen() {
                 <Text style={styles.profileButtonText}>Analiz et</Text>
               )}
             </TouchableOpacity>
+          </View>
+          <View style={styles.watchRow}>
+            <TouchableOpacity
+              style={[styles.profileButton, watchLoading && styles.profileButtonDisabled]}
+              onPress={handleWatchSync}
+              disabled={watchLoading}
+            >
+              {watchLoading ? (
+                <ActivityIndicator size="small" color="#f8fafc" />
+              ) : (
+                <Text style={styles.profileButtonText}>Saatten veri cek</Text>
+              )}
+            </TouchableOpacity>
+            {watchStatus ? <Text style={styles.muted}>{watchStatus}</Text> : null}
           </View>
           {recoError ? <Text style={styles.error}>{recoError}</Text> : null}
           {recoResult ? (
@@ -658,6 +742,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginTop: 4,
+    flexWrap: 'wrap',
+  },
+  watchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
     flexWrap: 'wrap',
   },
   formDateBox: {

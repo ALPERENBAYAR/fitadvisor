@@ -8,8 +8,8 @@ const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const { predictCluster } = require('./services/clusterPredictor');
 const { estimateMaxHr, zoneRange, ZONE_NOTE } = require('./services/hrZones');
-const clusterRules = require('./model/cluster_rules.json');
 const { buildCoachMessage } = require('./services/recommendationTextGenerator');
+const { trainKMeans } = require('./services/kmeansTrainer');
 
 const app = express();
 app.use(cors());
@@ -17,13 +17,30 @@ app.use(bodyParser.json());
 
 const DATA_FILE = path.join(__dirname, 'data.json');
 let lastWatchSnapshot = null;
+const AUTO_TRAIN_EVERY = 20;
 
 function loadData() {
   try {
     const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return {
+      users: [],
+      trainers: [],
+      messages: [],
+      notifications: [],
+      mlSamples: [],
+      lastTrainedAt: null,
+      ...parsed,
+    };
   } catch (e) {
-    return { users: [], trainers: [], messages: [], notifications: [] };
+    return {
+      users: [],
+      trainers: [],
+      messages: [],
+      notifications: [],
+      mlSamples: [],
+      lastTrainedAt: null,
+    };
   }
 }
 
@@ -33,6 +50,44 @@ function saveData(data) {
 
 function hashPassword(password, salt) {
   return crypto.createHash('sha256').update(password + salt).digest('hex');
+}
+
+const RULES_PATH = path.join(__dirname, 'model', 'cluster_rules.json');
+
+function loadClusterRules() {
+  const raw = fs.readFileSync(RULES_PATH, 'utf-8');
+  return JSON.parse(raw);
+}
+
+function saveClusterRules(rules) {
+  fs.writeFileSync(RULES_PATH, JSON.stringify(rules, null, 2), 'utf-8');
+}
+
+function storeSample({ steps, avgHr }) {
+  const data = loadData();
+  data.mlSamples = Array.isArray(data.mlSamples) ? data.mlSamples : [];
+  data.mlSamples.push({ steps, avgHr, createdAt: new Date().toISOString() });
+  saveData(data);
+  return data;
+}
+
+function retrainFromSamples(samples) {
+  const centers = trainKMeans({ samples, k: 3, maxIter: 30, seed: 42 });
+  const clusterRules = loadClusterRules();
+  const sorted = [...centers].sort((a, b) => a.steps - b.steps);
+  const updated = { ...clusterRules, clusters: { ...clusterRules.clusters } };
+  sorted.forEach((c, idx) => {
+    const id = String(idx + 1);
+    const prev = updated.clusters[id];
+    updated.clusters[id] = {
+      ...prev,
+      avgHr: Math.round(c.avgHr),
+      steps: Math.round(c.steps),
+      targetSteps: Math.round(c.steps + 1000),
+    };
+  });
+  saveClusterRules(updated);
+  return updated;
 }
 
 // Register user
@@ -205,7 +260,20 @@ app.post('/api/recommendation/analyze', (req, res) => {
     return res.status(400).json({ error: 'steps and avgHr are required numbers' });
   }
 
+  const dataAfterStore = storeSample({ steps: stepsNum, avgHr: hrNum });
+  const samples = Array.isArray(dataAfterStore.mlSamples) ? dataAfterStore.mlSamples : [];
+  if (samples.length >= AUTO_TRAIN_EVERY && samples.length % AUTO_TRAIN_EVERY === 0) {
+    try {
+      retrainFromSamples(samples);
+      dataAfterStore.lastTrainedAt = new Date().toISOString();
+      saveData(dataAfterStore);
+    } catch {
+      // keep serving with existing rules if training fails
+    }
+  }
+
   const clusterId = predictCluster({ steps: stepsNum, avgHr: hrNum });
+  const clusterRules = loadClusterRules();
   const rule = clusterRules.clusters[String(clusterId)];
   if (!rule) return res.status(500).json({ error: 'cluster rule missing' });
 
@@ -271,6 +339,7 @@ app.get('/api/recommendation/latest', (_req, res) => {
     steps: lastWatchSnapshot.steps,
     avgHr: lastWatchSnapshot.avgHr,
   });
+  const clusterRules = loadClusterRules();
   const rule = clusterRules.clusters[String(clusterId)];
   const zoneBpmRange = zoneRange(rule.zonePct, lastWatchSnapshot.age);
   const dynamicTargetSteps = Number.isFinite(lastWatchSnapshot.steps) ? lastWatchSnapshot.steps + 1000 : rule.targetSteps;
@@ -296,6 +365,44 @@ app.get('/api/recommendation/latest', (_req, res) => {
       zoneBpmRange,
       zoneNote: ZONE_NOTE,
     },
+  });
+});
+
+// Collect training samples (steps + avgHr) for periodic retraining
+app.post('/api/recommendation/learn', (req, res) => {
+  const { steps, avgHr } = req.body;
+  const stepsNum = Number(steps);
+  const hrNum = Number(avgHr);
+  if (!Number.isFinite(stepsNum) || !Number.isFinite(hrNum)) {
+    return res.status(400).json({ error: 'steps and avgHr are required numbers' });
+  }
+  const data = storeSample({ steps: stepsNum, avgHr: hrNum });
+  return res.json({ ok: true, count: Array.isArray(data.mlSamples) ? data.mlSamples.length : 0 });
+});
+
+// Retrain clusters from stored samples (offline but local)
+app.post('/api/recommendation/retrain', (_req, res) => {
+  const data = loadData();
+  const samples = Array.isArray(data.mlSamples) ? data.mlSamples : [];
+  if (samples.length < 3) {
+    return res.status(400).json({ error: 'not enough samples to retrain' });
+  }
+  try {
+    retrainFromSamples(samples);
+  } catch (e) {
+    return res.status(500).json({ error: 'training failed' });
+  }
+  data.lastTrainedAt = new Date().toISOString();
+  saveData(data);
+  return res.json({ ok: true, count: samples.length, lastTrainedAt: data.lastTrainedAt });
+});
+
+app.get('/api/recommendation/status', (_req, res) => {
+  const data = loadData();
+  return res.json({
+    ok: true,
+    samples: Array.isArray(data.mlSamples) ? data.mlSamples.length : 0,
+    lastTrainedAt: data.lastTrainedAt || null,
   });
 });
 

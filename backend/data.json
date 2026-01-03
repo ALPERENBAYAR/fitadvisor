@@ -62,5 +62,18 @@
       "createdAt": "2025-12-10T09:10:56.738Z",
       "type": "assign_request"
     }
-  ]
+  ],
+  "mlSamples": [
+    {
+      "steps": 500,
+      "avgHr": 67,
+      "createdAt": "2026-01-03T08:40:13.975Z"
+    },
+    {
+      "steps": 9000,
+      "avgHr": 85,
+      "createdAt": "2026-01-03T08:41:17.620Z"
+    }
+  ],
+  "lastTrainedAt": null
 }

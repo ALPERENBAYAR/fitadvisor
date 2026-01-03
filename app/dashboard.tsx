@@ -1,7 +1,8 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+﻿import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useEffect, useState } from "react";
-import { TouchableOpacity, Text } from "react-native";
+import { TouchableOpacity, Text, Platform, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
 import AnalysisScreen from "../src/screens/AnalysisScreen";
@@ -12,6 +13,7 @@ import PersonalTrainers from "../src/screens/PersonalTrainers";
 import Messages from "../src/screens/Messages";
 import CalorieSearch from "../src/screens/CalorieSearch";
 import { updateUserProfile } from "../src/firebase/service";
+import CoachBot from "../src/components/CoachBot";
 
 type Profile = {
   age: string;
@@ -60,6 +62,7 @@ const USERS_KEY = "fitadvisor:users";
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [selectedProgram, setSelectedProgram] = useState<SelectedProgram>(null);
   const [completedDays, setCompletedDays] = useState<Record<string, boolean>>({});
   const [session, setSession] = useState<Session | null>(null);
@@ -196,7 +199,8 @@ export default function DashboardScreen() {
   };
 
   return (
-    <Tab.Navigator
+    <View style={{ flex: 1, backgroundColor: "#0a1428" }}>
+      <Tab.Navigator
       screenOptions={{
         headerShown: true,
         headerTitleAlign: "center",
@@ -206,7 +210,7 @@ export default function DashboardScreen() {
         headerShadowVisible: false,
         headerRight: () => (
           <TouchableOpacity onPress={handleLogout} style={{ paddingHorizontal: 12, paddingVertical: 6 }}>
-            <Text style={{ color: "#ef4444", fontWeight: "700" }}>Çıkış</Text>
+            <Text style={{ color: "#ef4444", fontWeight: "700" }}>Cikis</Text>
           </TouchableOpacity>
         ),
         tabBarActiveTintColor: "#22c55e",
@@ -214,8 +218,16 @@ export default function DashboardScreen() {
         tabBarStyle: {
           backgroundColor: "#0b1220",
           borderTopColor: "#1f2937",
-          paddingVertical: 6,
-          height: 62,
+          paddingTop: 6,
+          paddingBottom: Math.max(insets.bottom, Platform.OS === "android" ? 16 : 10),
+          height: 64 + Math.max(insets.bottom, Platform.OS === "android" ? 16 : 10),
+        },
+        tabBarItemStyle: {
+          paddingVertical: 4,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: "700",
         },
         sceneContainerStyle: { backgroundColor: "#0a1428" },
       }}
@@ -241,5 +253,10 @@ export default function DashboardScreen() {
         {() => <ProfileScreen profile={profile} onUpdateProfile={handleUpdateProfile} />}
       </Tab.Screen>
     </Tab.Navigator>
+      <CoachBot />
+    </View>
   );
 }
+
+
+

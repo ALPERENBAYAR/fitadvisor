@@ -1,0 +1,200 @@
+FITADVISOR TEKNIK RAPOR (TURKCE)
+
+1) Genel Özet
+FitAdvisor, Expo + React Native tabanli bir mobil uygulama ve Node/Express tabanli
+basit bir backend servisinden olusan bir bitirme projesidir. Uygulama, kullanici ve
+trainer girisleri, günlük hedef/kilo/su takibi, mesajlasma, kalori arama,
+gorsel analiz (n8n/Ollama webhook), ve adim + nabiz girdilerinden k-means benzeri
+kurallar ile öneri ureten bir akil sagligi/fitness koçu modulunu içerir.
+Android tarafinda Health Connect kullanilarak saat/cihaz uzerinden adim ve nabiz
+verisi cekilir.
+
+2) Kullanilan Diller ve Teknolojiler
+- Diller:
+  - TypeScript/JavaScript (React Native + Expo + backend)
+  - Kotlin (Android MainActivity entegrasyonu)
+  - JSON (config, model kurallari)
+  - CSV (egitim/veri seti girisleri)
+- Mobil Stack:
+  - React Native (react-native 0.81.5)
+  - Expo SDK 54 (expo, expo-router, expo-dev-client)
+  - React Navigation (bottom tabs, stack)
+  - Expo moduleri (image-picker, linear-gradient, constants vb.)
+- Backend:
+  - Node.js + Express
+  - body-parser + cors
+- Veri/Servis:
+  - Firebase (Auth, Firestore, Storage)
+  - Health Connect (react-native-health-connect)
+  - n8n webhook (fotograf gonderip analiz)
+- Build/Dağıtım:
+  - EAS Build (eas.json, expo-build-properties)
+
+3) Proje Yapisi (Ana Klasorler)
+- app/: Expo Router route’lari (giris sayfalari, dashboard tablari)
+- src/: Ekranlar, servisler, util fonksiyonlar
+- backend/: Express API, kural tabanli “k-means” cluster mantigi
+- android/: prebuild ile uretilen native Android projesi
+- plugins/: custom config plugin (Health Connect izinleri ve MainActivity patch)
+- Data/: Kalp.csv ve Adim.csv veri dosyalari
+
+4) Backend Mimarisi (Node/Express)
+Dosya: backend/server.js
+- Tek dosyada basit JSON dosyasi tabanli data store (backend/data.json).
+- Uye kaydi, trainer kaydi, login, mesajlasma ve bildirim endpointleri var.
+- K-means benzeri cluster tahmini ve öneri ureten endpointler eklenmis:
+  - POST /api/recommendation/analyze
+  - POST /api/watch/ingest
+  - GET  /api/watch/latest
+  - GET  /api/recommendation/latest
+- Tahmin mekanizmasi:
+  - backend/model/cluster_rules.json icinde 3 cluster icin centroid
+    (avgHr, steps) ve öneri parametreleri (title, tips, zonePct) bulunur.
+  - backend/services/clusterPredictor.js: centroid’leri z-score
+    standardizasyon ile normalize eder, euclidean distance ile en yakin
+    clusterId’yi dondurur.
+  - backend/services/hrZones.js: yas verilirse max HR (220-age) ve hedef
+    zone BPM araligi hesaplanir; “Kisiye gore degisir” notu sabit mesajdir.
+  - backend/services/recommendationTextGenerator.js: “koç” tonunda,
+    3-4 cumlelik, dinamik metin ureten fonksiyon.
+
+5) K-Means Kurallari ve Öneri Metni
+Dosya: backend/model/cluster_rules.json
+- 3 cluster:
+  1) Hafif Baslangic (avgHr 78 / steps 4200)
+  2) Dengeli Aktif (avgHr 78 / steps 11200)
+  3) Yuksek Aktivite (avgHr 85 / steps 20000)
+- Her cluster icin title, message, tips ve zonePct araligi (50-60, 60-70, 70-80)
+  tanimli.
+
+Dosya: backend/services/recommendationTextGenerator.js
+- Girdi: steps, avgHr, age, weight, zoneBpmRange, targetSteps
+- Cikti: koc tonlu metin (3-4 cumle), zone bilgisi ve kisilesmis hedef.
+- “Hedef adim” her zaman kullanicinin girdigi adim + 1000 olacak sekilde
+  dinamik hesaplanir (backend/server.js icinde).
+
+6) Health Connect (Akilli Saat Verisi)
+Dosya: src/screens/AnalysisScreen.tsx
+- Android uzerinden Health Connect entegre.
+- Akis:
+  - initialize() ile Health Connect baslatilir.
+  - requestPermission ile Steps ve HeartRate okuma izinleri istenir.
+  - readRecords ile gunluk Steps ve HeartRate verileri cekilir.
+  - Steps kayitlari sum edilir, HeartRate sample’lari ortalama hesaplanir.
+  - Bulunan degerler form alanlarina yazilir.
+- Saglik verisi cekme butonu: “Saatten veri cek”
+
+Android tarafinda izin/entegrasyon:
+- android/app/src/main/AndroidManifest.xml:
+  - android.permission.health.READ_STEPS
+  - android.permission.health.READ_HEART_RATE
+- android/app/src/main/java/com/tahaeroglu/FitAdvisor/MainActivity.kt:
+  - HealthConnectPermissionDelegate.setPermissionDelegate(this) cagrisi,
+    permission dialog acilirken crash’i engeller.
+- plugins/withHealthConnectPermissions.js:
+  - MainActivity’yi otomatik patch’lemek icin custom expo config plugin.
+  - Java/Kotlin icin import + onCreate icine delegate call ekler.
+
+7) Frontend (Expo Router + Screens)
+Giris ekrani:
+- app/index.tsx (Kullanici/Trainer giris butonlari)
+
+Dashboard ve tablar:
+- app/dashboard.tsx:
+  - Bottom tab navigasyon (Ana, Program, Kalori, Mesajlar, Trainerlar, Analiz, Profil)
+  - SafeAreaInsets ile tab bar yuksekligi ayarlanir.
+
+Analiz ekrani:
+- src/screens/AnalysisScreen.tsx:
+  - “Adim + Nabiz onerisi” karti: manuel input + backend analyze call.
+  - “Saatten veri cek” butonu: Health Connect ile otomatik veri cekme.
+  - n8n webhook ile fotograf gonderip posture analizi alma (N8N_WEBHOOK_URL).
+
+8) API Bilesenleri ve Veri Akisi
+API base:
+- src/utils/api.ts
+  - API base URL: Expo host’u veya Android emulator icin 10.0.2.2 fallback.
+  - /api/recommendation/analyze endpointine JSON request atar.
+
+Öneri akisi:
+1) Kullanici adim ve ortalama nabiz girer (veya Health Connect ile doldurur).
+2) Frontend -> POST /api/recommendation/analyze
+3) Backend -> clusterPredictor ile clusterId bulur
+4) rule + zonePct + targetSteps hesaplar
+5) recommendationTextGenerator ile koç tonu metin uretir
+6) Frontend kartta “title, message, hedef adim, ipuclari” gosterir.
+
+9) Firebase Entegrasyonu
+Dosyalar:
+- src/firebase/config.ts
+- src/firebase/service.ts
+
+Kullanim:
+- Firebase Auth (kullanici/trainer girisi)
+- Firestore:
+  - users, trainers, messages, notifications
+  - calories (gunluk kalori)
+  - formEntries (gunluk form fotograf/log)
+- Storage: profil fotograflari vb.
+
+Not:
+Firebase config bilgileri kodda sabit; gercek senaryoda environment variable
+kullanilmasi onerilir.
+
+10) n8n / Ollama Gorsel Analiz
+- AnalysisScreen’de N8N_WEBHOOK_URL ile fotoğraf base64 olarak gonderilir.
+- n8n uzerinde Ollama/LLM analizinden gelen cevap summary/posture/advice olarak
+UI’da gosterilir.
+
+11) Model Verisi (CSV)
+Dosyalar:
+- Data/Kalp.csv: kalp atis kayitlari (Id, timestamp, HeartRate)
+- Data/Adim.csv: gunluk aktivite, adim ve mesafe verileri
+
+Bu veri dosyalari, K-means cluster merkezlerini cikarmak icin temel veri seti
+olarak kullanilmis ve cluster_rules.json’da manuel olarak sabitlenmistir.
+
+12) Build ve Konfigurasyon
+- app.json:
+  - expo-router, expo-splash-screen
+  - expo-build-properties (Android SDK target/min/compile)
+  - react-native-health-connect plugin
+  - custom plugin: withHealthConnectPermissions
+- eas.json:
+  - development profile, internal distribution
+- .npmrc:
+  - legacy-peer-deps=true (CI build uyumlulugu icin)
+- .easignore:
+  - EAS build’de upload edilecek dosyalarin filtrelenmesi
+
+13) Önemli Notlar / Potansiyel Ileri Calismalar
+- Backend “data.json” dosyasi ile calisiyor; production icin DB gerekir.
+- Health Connect sadece Android’de calisir.
+- Firestore auth ve güvenlik kurallari belirtilmemis (production icin eklenmeli).
+- K-means model su an sabit kurallar uzerinden calisir; gercek ML pipeline
+isterse Python training + model export eklenebilir.
+
+14) Kritik Dosya Referanslari
+Backend:
+- backend/server.js
+- backend/services/clusterPredictor.js
+- backend/services/hrZones.js
+- backend/services/recommendationTextGenerator.js
+- backend/model/cluster_rules.json
+
+Frontend:
+- app/index.tsx
+- app/dashboard.tsx
+- src/screens/AnalysisScreen.tsx
+- src/utils/api.ts
+- src/firebase/config.ts
+- src/firebase/service.ts
+
+Android/Health Connect:
+- android/app/src/main/AndroidManifest.xml
+- android/app/src/main/java/com/tahaeroglu/FitAdvisor/MainActivity.kt
+- plugins/withHealthConnectPermissions.js
+
+Data:
+- Data/Kalp.csv
+- Data/Adim.csv

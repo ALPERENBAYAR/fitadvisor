@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.tahaeroglu.FitAdvisor"
     },
     "web": {
       "output": "static",
@@ -38,10 +39,27 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      "./plugins/withHealthConnectPermissions",
+      "react-native-health-connect"
     ],
     "extra": {
-      "usdaApiKey": "02quFaDQ2weHlkvlvVSgeoJSsLFDhn7ZblVFY9Fv"
+      "apiBaseUrl": "http://192.168.43.45:4000",
+      "usdaApiKey": "02quFaDQ2weHlkvlvVSgeoJSsLFDhn7ZblVFY9Fv",
+      "router": {},
+      "eas": {
+        "projectId": "eee5bc28-7956-4c23-82e4-c047fd6fac97"
+      }
     },
     "experiments": {
       "typedRoutes": true,

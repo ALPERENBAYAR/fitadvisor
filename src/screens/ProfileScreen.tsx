@@ -1,17 +1,21 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
 import {
   Dimensions,
   Image,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { openHealthConnectSettings } from 'react-native-health-connect';
 
 const { width } = Dimensions.get('window');
 
@@ -29,6 +33,8 @@ type ProfileScreenProps = {
   onUpdateProfile: (profile: Profile) => void;
 };
 
+const COACH_ENABLED_KEY = 'fitadvisor:coachbotEnabled';
+
 export default function ProfileScreen({ profile, onUpdateProfile }: ProfileScreenProps) {
   const [age, setAge] = useState(profile?.age ?? '');
   const [height, setHeight] = useState(profile?.height ?? '');
@@ -36,6 +42,7 @@ export default function ProfileScreen({ profile, onUpdateProfile }: ProfileScree
   const [goalType, setGoalType] = useState(profile?.goalType ?? 'lose_weight');
   const [photo, setPhoto] = useState<string | null>(profile?.profilePhoto ?? null);
   const [savedMessage, setSavedMessage] = useState('');
+  const [coachEnabled, setCoachEnabled] = useState(true);
 
   useEffect(() => {
     setPhoto(profile?.profilePhoto ?? null);
@@ -44,6 +51,19 @@ export default function ProfileScreen({ profile, onUpdateProfile }: ProfileScree
     setWeight(profile?.weight ?? '');
     setGoalType(profile?.goalType ?? 'lose_weight');
   }, [profile]);
+
+  useEffect(() => {
+    const loadCoach = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(COACH_ENABLED_KEY);
+        if (stored === null) return;
+        setCoachEnabled(stored !== 'false');
+      } catch {
+        // ignore
+      }
+    };
+    loadCoach();
+  }, []);
 
   const handleSave = () => {
     const updated: Profile = {
@@ -198,6 +218,44 @@ export default function ProfileScreen({ profile, onUpdateProfile }: ProfileScree
             {renderGoalChip('lose_weight', 'Kilo vermek')}
             {renderGoalChip('maintain', 'Formu korumak')}
             {renderGoalChip('gain_muscle', 'Kas kazanmak')}
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Saat verisi</Text>
+          <Text style={styles.sectionHint}>
+            Bu uygulama sadece bu telefonun Health Connect verisini kullanir. Yani hangi kullanici girerse girsin,
+            bu cihazdaki saat verileri okunur.
+          </Text>
+          {Platform.OS === 'android' ? (
+            <TouchableOpacity style={styles.watchButton} onPress={openHealthConnectSettings} activeOpacity={0.9}>
+              <Text style={styles.watchButtonText}>Health Connect ayarlari</Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.sectionHint}>Health Connect sadece Android cihazlarda desteklenir.</Text>
+          )}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Kizgin Antrenor</Text>
+          <Text style={styles.sectionHint}>
+            Adim, su ve kalori hedefi kacarsa sag altta uyarir. Istemezsen kapatabilirsin.
+          </Text>
+          <View style={styles.coachRow}>
+            <Text style={styles.label}>Chatbot aktif</Text>
+            <Switch
+              value={coachEnabled}
+              onValueChange={async (value) => {
+                setCoachEnabled(value);
+                try {
+                  await AsyncStorage.setItem(COACH_ENABLED_KEY, value ? 'true' : 'false');
+                } catch {
+                  // ignore
+                }
+              }}
+              trackColor={{ true: '#16a34a', false: '#1f2937' }}
+              thumbColor={coachEnabled ? '#dcfce7' : '#e2e8f0'}
+            />
           </View>
         </View>
 
@@ -379,6 +437,20 @@ const styles = StyleSheet.create({
   goalChipTextSelected: {
     color: '#34d399',
   },
+  watchButton: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.28)',
+  },
+  watchButtonText: {
+    color: '#e2e8f0',
+    fontWeight: '700',
+  },
   saveButton: {
     borderRadius: 14,
     overflow: 'hidden',
@@ -398,5 +470,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#34d399',
     textAlign: 'center',
+  },
+  coachRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 });
