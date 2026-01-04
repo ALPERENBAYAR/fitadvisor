@@ -1,4 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useState } from 'react';
 import {
   SafeAreaView,
@@ -20,6 +22,26 @@ type FoodItem = {
   calories: number;
   grams?: number;
 };
+
+const ICON_CLOUD = [
+  { name: 'food-apple', size: 150, color: 'rgba(239,68,68,0.22)', top: -40, left: 40 },
+  { name: 'food-drumstick', size: 150, color: 'rgba(245,158,11,0.24)', top: -20, right: 60 },
+  { name: 'hamburger', size: 150, color: 'rgba(248,113,113,0.24)', top: 70, left: 120 },
+  { name: 'food-steak', size: 160, color: 'rgba(251,146,60,0.22)', top: 110, right: 140 },
+  { name: 'food-hot-dog', size: 140, color: 'rgba(250,204,21,0.22)', top: 210, left: 40 },
+  { name: 'food-variant', size: 170, color: 'rgba(167,139,250,0.2)', top: 240, right: 40 },
+  { name: 'silverware-fork-knife', size: 130, color: 'rgba(56,189,248,0.22)', top: 320, left: 160 },
+  { name: 'food', size: 150, color: 'rgba(125,211,252,0.2)', top: 360, right: 140 },
+  { name: 'pizza', size: 160, color: 'rgba(251,191,36,0.22)', top: 440, left: 70 },
+  { name: 'food-turkey', size: 150, color: 'rgba(248,113,113,0.2)', top: 520, right: 70 },
+  { name: 'food-croissant', size: 160, color: 'rgba(34,197,94,0.22)', bottom: 220, left: 20 },
+  { name: 'noodles', size: 150, color: 'rgba(74,222,128,0.22)', bottom: 200, right: 20 },
+  { name: 'food-drumstick-bite', size: 150, color: 'rgba(190,242,100,0.22)', bottom: 120, left: 140 },
+  { name: 'ice-cream', size: 150, color: 'rgba(248,250,252,0.18)', bottom: 120, right: 140 },
+  { name: 'hamburger', size: 150, color: 'rgba(248,113,113,0.2)', bottom: 60, left: 60 },
+  { name: 'pizza', size: 150, color: 'rgba(251,191,36,0.2)', bottom: 60, right: 60 },
+  { name: 'food-apple', size: 140, color: 'rgba(239,68,68,0.2)', bottom: 10, left: 220 },
+];
 
 const TR_EN_MAP: Record<string, string> = {
   'tavuk göğsü': 'chicken breast',
@@ -271,6 +293,23 @@ export default function CalorieSearch() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <LinearGradient
+        colors={['#0a1630', '#0c1d3c', '#0e2347']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradient}
+      />
+      <View style={styles.iconCloud}>
+        {ICON_CLOUD.map((icon, index) => (
+          <MaterialCommunityIcons
+            key={`${icon.name}-${index}`}
+            name={icon.name}
+            size={icon.size}
+            color={icon.color}
+            style={[styles.iconCloudItem, { top: icon.top, left: icon.left, right: icon.right, bottom: icon.bottom }]}
+          />
+        ))}
+      </View>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>Kalori Arama</Text>
         <Text style={styles.subtitle}>
@@ -382,7 +421,10 @@ export default function CalorieSearch() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0b1220' },
+  safeArea: { flex: 1, backgroundColor: '#0a1630' },
+  gradient: { ...StyleSheet.absoluteFillObject },
+  iconCloud: { ...StyleSheet.absoluteFillObject },
+  iconCloudItem: { position: 'absolute' },
   content: { padding: 16, gap: 12 },
   title: { fontSize: 24, fontWeight: '800', color: '#f8fafc' },
   subtitle: { fontSize: 14, color: '#cbd5e1', lineHeight: 20 },

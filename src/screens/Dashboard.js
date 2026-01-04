@@ -1,300 +1,258 @@
 ﻿import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Dimensions,
-  Image,
   SafeAreaView,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-
-import { getUsdaApiKey } from '../utils/api';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
 const STORAGE_TODAY_KEY = 'fitadvisor:todayStats';
-const STORAGE_HISTORY_KEY = 'fitadvisor:history';
 const STORAGE_DATA_SOURCE_KEY = 'fitadvisor:dataSource';
-const STORAGE_REMINDERS_KEY = 'fitadvisor:reminders';
 const STORAGE_FORM_LOG_KEY = 'fitadvisor:formLog';
+const WATCH_SNAPSHOT_KEY = 'fitadvisor:watchSnapshot';
+const WATER_STORAGE_PREFIX = 'fitadvisor:water:';
+const EXERCISE_STORAGE_PREFIX = 'fitadvisor:exerciseLog:';
 
-function computeScore(stats) {
-  if (!stats) return 0;
-  const stepRatio = stats.stepsTarget ? stats.steps / stats.stepsTarget : 0;
-  const workoutRatio = stats.workoutTarget ? stats.workoutMinutes / stats.workoutTarget : 0;
-  const waterRatio = stats.waterTarget ? stats.waterLiters / stats.waterTarget : 0;
-  const avg = (stepRatio + workoutRatio + waterRatio) / 3;
-  const clamped = Math.max(0, Math.min(1, avg));
-  return Math.round(clamped * 100);
-}
+const ICON_CLOUD = [
+  { name: 'dumbbell', size: 130, color: 'rgba(148,197,255,0.08)', top: -20, left: 10 },
+  { name: 'heart-pulse', size: 150, color: 'rgba(148,197,255,0.06)', top: 18, right: 14 },
+  { name: 'weight-lifter', size: 180, color: 'rgba(148,197,255,0.05)', bottom: -20, left: 12 },
+  { name: 'run', size: 120, color: 'rgba(148,197,255,0.08)', bottom: 38, right: 20 },
+];
 
-function updateHistory(prevHistory, todayId, score) {
-  const filtered = (prevHistory || []).filter((entry) => entry.date !== todayId);
-  return [...filtered, { date: todayId, score }];
-}
-
-const FORM_TYPE_OPTIONS = ['Fit', 'Bulk', 'Cut'];
-
-export default function Dashboard({ profile, goals, selectedProgram }) {
-  const [imageUri, setImageUri] = useState(null);
-  const [analysisText, setAnalysisText] = useState('Şimdilik örnek bir analiz gösteriliyor.');
-  const [analysisStatus, setAnalysisStatus] = useState('idle'); // idle | loading | ready | error
-  const userName = profile?.name || 'Alperen';
-
-  const stepsTarget = goals?.stepsTarget ?? 8000;
-  const workoutTarget = goals?.workoutMinutesTarget ?? 30;
-  const waterTarget = goals?.waterTargetLiters ?? 2;
+export default function Dashboard({ profile, goals }) {
   const [todayStats, setTodayStats] = useState({
-    steps: 3250,
-    stepsTarget,
+    steps: 0,
+    stepsTarget: goals?.stepsTarget ?? 8000,
     workoutMinutes: 15,
-    workoutTarget,
+    workoutTarget: goals?.workoutMinutesTarget ?? 30,
     waterLiters: 0.8,
-    waterTarget,
+    waterTarget: 2,
     calories: 0,
     caloriesTarget: 2000,
   });
-  const [history, setHistory] = useState([]);
-  const [dataSource, setDataSource] = useState('manual'); // manual | synced
-  const [reminders, setReminders] = useState({ water: true, steps: false, workout: true });
-  const [foodEntries, setFoodEntries] = useState([]);
-  const [foodQuery, setFoodQuery] = useState('');
-  const [foodResults, setFoodResults] = useState([]);
-  const [foodStatus, setFoodStatus] = useState('idle'); // idle | loading | error
-  const [foodError, setFoodError] = useState('');
-  const [formEntries, setFormEntries] = useState([]);
-  const [formType, setFormType] = useState(FORM_TYPE_OPTIONS[0]);
-  const [formError, setFormError] = useState('');
+  const [dataSource, setDataSource] = useState('manual');
+  const [watchAvgHr, setWatchAvgHr] = useState(0);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [exerciseLog, setExerciseLog] = useState({
+    pushups: '',
+    situps: '',
+    ropeMinutes: '',
+    plankMinutes: '',
+  });
+  const [isExerciseHydrated, setIsExerciseHydrated] = useState(false);
 
-  const usdaApiKey = getUsdaApiKey();
+  const userName = profile?.name || 'Alperen';
+  const weightKg = profile?.weight ? Number(profile.weight) : null;
+  const waterTarget = Number.isFinite(weightKg)
+    ? Number((weightKg * 0.04).toFixed(1))
+    : (goals?.waterTargetLiters ?? 2);
 
   const todayId = new Date().toISOString().slice(0, 10);
-  const score = computeScore(todayStats);
+  const waterStorageKey = `${WATER_STORAGE_PREFIX}${todayId}`;
+  const exerciseStorageKey = `${EXERCISE_STORAGE_PREFIX}${todayId}`;
+  const watchReady = todayStats.steps > 0 || (Number.isFinite(watchAvgHr) && watchAvgHr > 0);
+  const displaySteps = watchReady ? todayStats.steps : 0;
+  const caloriesRatio = todayStats.caloriesTarget
+    ? (todayStats.calories || 0) / todayStats.caloriesTarget
+    : 0;
+  const heightCm = profile?.height ? Number(profile.height) : null;
+  const ageYears = profile?.age ? Number(profile.age) : null;
+  const gender = profile?.gender || 'male';
 
-  const heightMeters = profile?.height ? Number(profile.height) / 100 : null;
-  const weightKg = profile?.weight ? Number(profile.weight) : null;
-
-  let bmi = null;
-  if (heightMeters && weightKg && heightMeters > 0) {
-    bmi = weightKg / (heightMeters * heightMeters);
-  }
-
-  let bmiLabel = '';
-  let bmiComment = 'Profil bilgilerinle daha net bir analiz çıkaracağız.';
-
-  if (bmi) {
-    if (bmi < 18.5) {
-      bmiLabel = 'Zayıf';
-      bmiComment = 'Biraz kilo alman ve kas kütleni artırman faydalı olabilir.';
-    } else if (bmi < 25) {
-      bmiLabel = 'Normal';
-      bmiComment = 'Sağlıklı aralıktasın, hedefini korumaya odaklanabilirsin.';
-    } else if (bmi < 30) {
-      bmiLabel = 'Fazla kilolu';
-      bmiComment = 'Düzenli adım ve antrenmanla yağ oranını düşürmeye odaklan.';
-    } else {
-      bmiLabel = 'Obezite';
-      bmiComment = 'Daha kontrollü bir program ve doktor desteğiyle çalışmak önemli.';
+  const basalCalories = (() => {
+    if (!Number.isFinite(weightKg) || !Number.isFinite(heightCm) || !Number.isFinite(ageYears)) {
+      return 0;
     }
-  }
+    const base = 10 * weightKg + 6.25 * heightCm - 5 * ageYears;
+    const genderOffset = gender === 'female' ? -161 : 5;
+    return Math.max(0, Math.round(base + genderOffset));
+  })();
 
-  const last7Days = history.slice(-7).map((entry) => {
-    const date = new Date(entry.date);
-    const label = date.toLocaleDateString('tr-TR', { weekday: 'short' });
-    return { label, score: entry.score };
+  const numericValue = (value) => {
+    if (value === '') return 0;
+    const parsed = Number(String(value).replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const calcCalories = {
+    pushups: Number((numericValue(exerciseLog.pushups) * (weightKg || 0) * 0.004).toFixed(1)),
+    situps: Number((numericValue(exerciseLog.situps) * (weightKg || 0) * 0.00222).toFixed(1)),
+    rope: Number((numericValue(exerciseLog.ropeMinutes) * (weightKg || 0) * 0.207).toFixed(1)),
+    plank: Number((numericValue(exerciseLog.plankMinutes) * (weightKg || 0) * 0.0665).toFixed(1)),
+  };
+  const exerciseBurn = Number(
+    (calcCalories.pushups + calcCalories.situps + calcCalories.rope + calcCalories.plank).toFixed(1)
+  );
+  const totalBurn = basalCalories + exerciseBurn;
+  const netCalories = Number(((todayStats.calories || 0) - totalBurn).toFixed(1));
+
+  const buildTodayPlan = ({ steps, avgHr, caloriesRatio, stepsTarget }) => {
+    const lowSteps = stepsTarget ? steps < stepsTarget * 0.6 : steps < 5000;
+    const highSteps = stepsTarget ? steps >= stepsTarget * 1.2 : steps >= 14000;
+    const highHr = avgHr >= 85;
+    const midHr = avgHr >= 75;
+
+    if (steps === 0 && avgHr === 0) {
+      return {
+        intensity: 'Dusuk',
+        title: 'Veri bekleniyor',
+        subtitle: 'Saat verisi gelince gunluk program netlesir.',
+        items: [
+          { title: '5-10 dk hafif yuruyus', meta: 'Isinma' },
+          { title: 'Mobilite ve esneme', meta: 'Kalca, bel, omuz' },
+          { title: 'Nefes egzersizi', meta: '2-3 dk' },
+        ],
+      };
+    }
+
+    if (caloriesRatio >= 1.1 && lowSteps) {
+      return {
+        intensity: 'Dusuk',
+        title: 'Aktif toparlanma',
+        subtitle: 'Kalori yuksek, hareket dusuk. Bugun daha yavas bir tempo.',
+        items: [
+          { title: '20 dk tempolu yuruyus', meta: 'Rahat tempo' },
+          { title: 'Core + esneme', meta: '10-12 dk' },
+          { title: 'Kisa soguma', meta: '5 dk' },
+        ],
+      };
+    }
+
+    if (caloriesRatio <= 0.8 && lowSteps) {
+      return {
+        intensity: 'Orta',
+        title: 'Kisa aktivasyon',
+        subtitle: 'Kalori dusuk ve hareket az. Kisa ama etkili bir seans.',
+        items: [
+          { title: 'Isinma yuruyusu', meta: '8-10 dk' },
+          { title: 'Vucut agirligi seti', meta: '2-3 tur' },
+          { title: 'Esneme', meta: '5 dk' },
+        ],
+      };
+    }
+
+    if (highSteps && highHr) {
+      return {
+        intensity: 'Yuksek',
+        title: 'Tempo + interval',
+        subtitle: 'Aktivite yuksek. Bugun hizli ve kontrollu bir tempo.',
+        items: [
+          { title: '10 dk isinma', meta: 'Hafif tempo' },
+          { title: '4-6 interval seti', meta: '1 dk hizli + 2 dk aktif' },
+          { title: 'Soguma', meta: '5-8 dk' },
+        ],
+      };
+    }
+
+    if (highSteps || midHr) {
+      return {
+        intensity: 'Orta',
+        title: 'Dengeli full body',
+        subtitle: 'Bugun dengeli bir guc + kardiyo plani.',
+        items: [
+          { title: 'Isinma', meta: '5-7 dk' },
+          { title: 'Full body devre', meta: '25-30 dk' },
+          { title: 'Esneme', meta: '5 dk' },
+        ],
+      };
+    }
+
+    return {
+      intensity: 'Dusuk',
+      title: 'Hafif hareket',
+      subtitle: 'Bugun hafif tempo ile devam et.',
+      items: [
+        { title: 'Yuruyus', meta: '15-20 dk' },
+        { title: 'Mobilite', meta: '8-10 dk' },
+        { title: 'Soguma', meta: '3-5 dk' },
+      ],
+    };
+  };
+
+  const todayPlan = buildTodayPlan({
+    steps: displaySteps,
+    avgHr: watchAvgHr || 0,
+    caloriesRatio,
+    stepsTarget: todayStats.stepsTarget,
   });
 
-  const incrementSteps = (delta) => {
-    setTodayStats((prev) => ({
-      ...prev,
-      steps: Math.min(prev.steps + delta, prev.stepsTarget),
-    }));
-    setDataSource('manual');
-  };
+  const buildAdviceBullets = () => {
+    const bullets = [];
+    if (Number.isFinite(weightKg) && Number.isFinite(heightCm) && heightCm > 0) {
+      const heightM = heightCm / 100;
+      const minWeight = Number((18.5 * heightM * heightM).toFixed(1));
+      const maxWeight = Number((24.9 * heightM * heightM).toFixed(1));
+      const isUnder = weightKg < minWeight;
+      const isOver = weightKg > maxWeight;
 
-  const incrementWorkout = (delta) => {
-    setTodayStats((prev) => ({
-      ...prev,
-      workoutMinutes: Math.min(prev.workoutMinutes + delta, prev.workoutTarget),
-    }));
-    setDataSource('manual');
-  };
-
-  const incrementWater = (delta) => {
-    setTodayStats((prev) => ({
-      ...prev,
-      waterLiters: Math.min(prev.waterLiters + delta, prev.waterTarget),
-    }));
-    setDataSource('manual');
-  };
-
-  const addFoodEntry = (entry) => {
-    const calories = Math.max(0, Math.round(entry.calories || 0));
-    setFoodEntries((prev) => [...prev, { ...entry, calories }]);
-    setTodayStats((prev) => ({ ...prev, calories: (prev.calories || 0) + calories }));
-    setDataSource('manual');
-  };
-
-  const normalizeFoodQuery = (text) =>
-    text
-      .toLowerCase()
-      .replace(/ğ/g, 'g')
-      .replace(/ü/g, 'u')
-      .replace(/ş/g, 's')
-      .replace(/ı/g, 'i')
-      .replace(/ö/g, 'o')
-      .replace(/ç/g, 'c')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  const handleSearchFood = async () => {
-    if (!foodQuery.trim()) {
-      setFoodError('Bir besin adı yaz.');
-      return;
-    }
-    if (!usdaApiKey) {
-      setFoodError('USDA API anahtarı bulunamadı. EXPO_PUBLIC_USDA_API_KEY tanımlayın.');
-      return;
-    }
-    setFoodStatus('loading');
-    setFoodError('');
-    const rawQuery = foodQuery.trim();
-    const fallbackQuery = normalizeFoodQuery(rawQuery);
-
-    const searchOnce = async (q) => {
-      const res = await fetch(
-        `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(q)}&pageSize=5&api_key=${usdaApiKey}`
-      );
-      if (!res.ok) {
-        setFoodError('USDA isteği başarısız.');
-        setFoodStatus('error');
-        return null;
+      if (isOver && netCalories > 0) {
+        bullets.push('Ideal kilonun uzerindesin ve kalori fazlan var. Bunu kalori acigina cevirmen gerekir.');
+      } else if (isOver && netCalories <= 0) {
+        bullets.push('Ideal kilonun uzerindesin ve kalori acigin var. Bu sekilde devam edebilirsin.');
+      } else if (isUnder && netCalories < 0) {
+        bullets.push('Ideal kilonun altindasin ve kalori acigin var. Dengeli sekilde kalori artir.');
+      } else if (isUnder && netCalories >= 0) {
+        bullets.push('Ideal kilonun altindasin ve kalori fazlan var. Bu tempo ideal kiloya yaklastirir.');
+      } else {
+        bullets.push('Ideal kilo araligindasin. Kalorini dengede tutman yeterli.');
       }
-      const data = await res.json();
-      const foods = Array.isArray(data?.foods) ? data.foods : [];
-      const mapped = foods.map((f) => {
-        const nutrient =
-          (f.foodNutrients || []).find((n) => {
-            const name = (n?.nutrientName || '').toLowerCase();
-            const unit = (n?.unitName || '').toLowerCase();
-            const number = String(n?.nutrientNumber || '');
-            const isEnergy = name.includes('energy') || number === '208';
-            return isEnergy && (unit.includes('kcal') || unit.includes('kj'));
-          }) || {};
+      bullets.push(`Ideal aralik: ${minWeight} - ${maxWeight} kg.`);
+    }
 
-        let calories = Number(nutrient.value) || 0;
-        if (calories === 0 && f?.labelNutrients?.calories?.value) {
-          calories = Number(f.labelNutrients.calories.value) || 0;
-        }
-        if (calories === 0 && nutrient.unitName && nutrient.unitName.toLowerCase().includes('kj')) {
-          calories = Math.round(Number(nutrient.value || 0) / 4.184);
-        }
+    if (todayStats.waterTarget && todayStats.waterLiters < todayStats.waterTarget) {
+      const diff = Number((todayStats.waterTarget - todayStats.waterLiters).toFixed(1));
+      bullets.push(`Su hedefinden ${diff} L eksiksin. Bugun bunu tamamla.`);
+    }
 
-        return {
-          id: f.fdcId || f.description,
-          description: f.description || 'Bilinmeyen',
-          brand: f.brandOwner || f.brandName || '',
-          calories,
-        };
-      });
-      return mapped;
-    };
+    bullets.push(`Nabiz + adim analizine gore: ${todayPlan.title}. ${todayPlan.subtitle}`);
+    return bullets;
+  };
 
+  const adviceBullets = buildAdviceBullets();
+
+  useEffect(() => {
+    setTodayStats((prev) => ({ ...prev, waterTarget }));
+  }, [waterTarget]);
+
+  const refreshCalories = async () => {
     try {
-      let mapped = await searchOnce(rawQuery);
-
-      if ((!mapped || mapped.length === 0) && fallbackQuery !== rawQuery) {
-        mapped = await searchOnce(fallbackQuery);
+      const storedCalories = await AsyncStorage.getItem(`fitadvisor:calories:${todayId}`);
+      if (storedCalories) {
+        const parsedCalories = JSON.parse(storedCalories);
+        if (Array.isArray(parsedCalories)) {
+          const total = parsedCalories.reduce((sum, item) => sum + (Number(item?.calories) || 0), 0);
+          setTodayStats((prev) => ({ ...prev, calories: Math.round(total) }));
+        }
       }
-
-      if (!mapped || mapped.length === 0) {
-        setFoodError('Sonuç bulunamadı. İngilizce isim veya farklı yazım deneyin ya da Manuel ekle kullanın.');
-        setFoodStatus('error');
-        return;
-      }
-
-      setFoodResults(mapped);
-      setFoodStatus('idle');
-    } catch (e) {
-      setFoodError('Arama sırasında hata oluştu.');
-      setFoodStatus('error');
+    } catch {
+      // ignore
     }
   };
 
-  const handleCaloriesChange = (value) => {
-    const numeric = Number(value.replace(/[^0-9.]/g, ''));
-    if (Number.isNaN(numeric)) return;
-    setTodayStats((prev) => ({ ...prev, calories: numeric }));
-    setDataSource('manual');
-  };
-
-  const handleRunAnalysis = async () => {
-    if (!bmi) {
-      setAnalysisStatus('error');
-      setAnalysisText('Şimdilik örnek bir analiz gösteriliyor.');
-      return;
-    }
-
-    setAnalysisStatus('loading');
-
-    // Backend analyze kapalı; lokal analiz metni kullanılıyor.
-
-    const goal = profile?.goalType;
-    let text = '';
-
-    if (goal === 'gain_muscle') {
-      if (bmi < 22) {
-        text =
-          'Kas kazanmak için nispeten zayıf sayılabilecek bir aralıktasın. Düzenli kuvvet antrenmanı ve dengeli beslenme kas kütleni artırmana yardım edecek.';
-      } else if (bmi < 27) {
-        text =
-          'Kas kazanmak için uygun bir aralıktasın. Ağırlık antrenmanlarını düzenli tutman ve toparlanmaya dikkat etmen yeterli.';
-      } else {
-        text =
-          'Kas kazanma hedefin var; önce hafif bir yağ azaltma dönemi ile eklemlere yükü azaltmak daha konforlu olabilir.';
-      }
-    } else if (goal === 'maintain') {
-      if (bmi < 18.5) {
-        text =
-          'Formu koruma hedefi için kilon alt sınırda. Biraz daha güçlü kas kütlesi ve yeterli kalori almak seni daha dengeli hissettirebilir.';
-      } else if (bmi < 25) {
-        text =
-          'Formunu koruma açısından iyi bir aralıktasın. Düzenli adım, hafif kuvvet ve esneme çalışmaları bu durumu sürdürmeni sağlar.';
-      } else {
-        text =
-          'Formu koruma hedefinde vücut kompozisyonunu biraz hafifletmek konforunu artırabilir; sakin tempolu kilo verme uygun görünüyor.';
-      }
-    } else {
-      if (bmi < 25) {
-        text =
-          'Kilo verme hedefin var ama BMI aralığın fena değil. Vücudu sıkılaştırmaya, kas korumaya ve sağlıklı beslenmeye odaklanmak yeterli olabilir.';
-      } else if (bmi < 30) {
-        text =
-          'Kilo verme hedefin için yürüyüş, hafif koşu ve kuvvet egzersizlerini birleştirmek yağ oranını istikrarlı şekilde azaltmana yardımcı olur.';
-      } else {
-        text =
-          'Kilo verme sürecinde yavaş ve sürdürülebilir ilerlemek en sağlıklısı. Düzenli hareket, uyku ve beslenme ile başlayıp gerekirse uzman desteği ekleyebilirsin.';
-      }
-    }
-
-    if (selectedProgram?.title) {
-      text += ` Seçili programın (${selectedProgram.title}) bu hedefe destek olacak şekilde yapılandırıldı.`;
-    }
-
-    setAnalysisText(text);
-    setAnalysisStatus('ready');
-  };
+  useFocusEffect(
+    useCallback(() => {
+      refreshCalories();
+      return undefined;
+    }, [todayId])
+  );
 
   useEffect(() => {
     const loadData = async () => {
       try {
+        const storedWater = await AsyncStorage.getItem(waterStorageKey);
+        const storedWaterLiters = storedWater ? Number(storedWater) : null;
+
         const storedToday = await AsyncStorage.getItem(STORAGE_TODAY_KEY);
         if (storedToday) {
           const parsed = JSON.parse(storedToday);
@@ -302,21 +260,21 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
             setTodayStats((prev) => ({
               ...prev,
               ...parsed.stats,
+              waterLiters:
+                Number.isFinite(storedWaterLiters) && storedWaterLiters !== null
+                  ? storedWaterLiters
+                  : parsed.stats.waterLiters ?? prev.waterLiters,
               calories: parsed.stats.calories ?? prev.calories ?? 0,
               caloriesTarget: parsed.stats.caloriesTarget ?? prev.caloriesTarget ?? 2000,
+              waterTarget,
             }));
-            if (Array.isArray(parsed.foodEntries)) {
-              setFoodEntries(parsed.foodEntries);
-            }
           }
-        }
-
-        const storedHistory = await AsyncStorage.getItem(STORAGE_HISTORY_KEY);
-        if (storedHistory) {
-          const parsedHistory = JSON.parse(storedHistory);
-          if (Array.isArray(parsedHistory)) {
-            setHistory(parsedHistory);
-          }
+        } else if (Number.isFinite(storedWaterLiters) && storedWaterLiters !== null) {
+          setTodayStats((prev) => ({
+            ...prev,
+            waterLiters: storedWaterLiters,
+            waterTarget,
+          }));
         }
 
         const storedSource = await AsyncStorage.getItem(STORAGE_DATA_SOURCE_KEY);
@@ -324,195 +282,172 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
           setDataSource(storedSource);
         }
 
-        const storedReminders = await AsyncStorage.getItem(STORAGE_REMINDERS_KEY);
-        if (storedReminders) {
-          const parsed = JSON.parse(storedReminders);
-          if (parsed) {
-            setReminders(parsed);
+        const storedCalories = await AsyncStorage.getItem(`fitadvisor:calories:${todayId}`);
+        if (storedCalories) {
+          const parsedCalories = JSON.parse(storedCalories);
+          if (Array.isArray(parsedCalories)) {
+            const total = parsedCalories.reduce((sum, item) => sum + (Number(item?.calories) || 0), 0);
+            setTodayStats((prev) => ({ ...prev, calories: Math.round(total) }));
           }
         }
 
-        const storedFormLog = await AsyncStorage.getItem(STORAGE_FORM_LOG_KEY);
-        if (storedFormLog) {
-          const parsed = JSON.parse(storedFormLog);
-          if (Array.isArray(parsed)) {
-            setFormEntries(parsed);
+        const storedWatch = await AsyncStorage.getItem(WATCH_SNAPSHOT_KEY);
+        let watchApplied = false;
+        if (storedWatch) {
+          const parsedWatch = JSON.parse(storedWatch);
+          const watchSteps = Number(parsedWatch?.steps || 0);
+          const watchAvg = Number(parsedWatch?.avgHr || 0);
+          if (Number.isFinite(watchSteps) && watchSteps > 0) {
+            setTodayStats((prev) => ({ ...prev, steps: watchSteps }));
+            setDataSource('synced');
+            watchApplied = true;
+          }
+          if (Number.isFinite(watchAvg) && watchAvg > 0) {
+            setWatchAvgHr(watchAvg);
           }
         }
-      } catch (e) {
-        // Ignore load errors; fall back to defaults
+        if (!watchApplied) {
+          setTodayStats((prev) => ({ ...prev, steps: 0 }));
+          setDataSource('manual');
+        }
+      } catch {
+        // ignore
+      } finally {
+        setIsHydrated(true);
       }
     };
 
     loadData();
-  }, [todayId]);
+  }, [todayId, waterStorageKey, waterTarget]);
+
+  useEffect(() => {
+    let active = true;
+    const loadExercises = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(exerciseStorageKey);
+        if (!active) return;
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setExerciseLog({
+            pushups: parsed?.pushups ?? '',
+            situps: parsed?.situps ?? '',
+            ropeMinutes: parsed?.ropeMinutes ?? '',
+            plankMinutes: parsed?.plankMinutes ?? '',
+          });
+        }
+      } catch {
+        // ignore
+      } finally {
+        if (active) setIsExerciseHydrated(true);
+      }
+    };
+    loadExercises();
+    return () => {
+      active = false;
+    };
+  }, [exerciseStorageKey]);
 
   useEffect(() => {
     const persist = async () => {
       try {
-        const currentScore = computeScore(todayStats);
         await AsyncStorage.setItem(
           STORAGE_TODAY_KEY,
-          JSON.stringify({ date: todayId, stats: todayStats, foodEntries })
+          JSON.stringify({ date: todayId, stats: todayStats })
         );
-
-        setHistory((prev) => {
-          const updated = updateHistory(prev, todayId, currentScore);
-          AsyncStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(updated));
-          return updated;
-        });
-
         await AsyncStorage.setItem(STORAGE_DATA_SOURCE_KEY, dataSource);
-      } catch (e) {
-        // Non-blocking persistence
+        await AsyncStorage.setItem(waterStorageKey, String(todayStats.waterLiters ?? 0));
+      } catch {
+        // ignore
       }
     };
 
-    persist();
-  }, [todayStats, todayId, dataSource]);
+    if (isHydrated) {
+      persist();
+    }
+  }, [todayStats, todayId, dataSource, waterStorageKey, isHydrated]);
 
   useEffect(() => {
-    const persistReminders = async () => {
+    const persistExercises = async () => {
       try {
-        await AsyncStorage.setItem(STORAGE_REMINDERS_KEY, JSON.stringify(reminders));
-      } catch (e) {
-        // Non-blocking
+        await AsyncStorage.setItem(exerciseStorageKey, JSON.stringify(exerciseLog));
+      } catch {
+        // ignore
       }
     };
-
-    persistReminders();
-  }, [reminders]);
-
-  useEffect(() => {
-    const persistFormLog = async () => {
-      try {
-        await AsyncStorage.setItem(STORAGE_FORM_LOG_KEY, JSON.stringify(formEntries));
-      } catch (e) {
-        // Non-blocking
-      }
-    };
-
-    persistFormLog();
-  }, [formEntries]);
-
-  const handlePickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      return;
+    if (isExerciseHydrated) {
+      persistExercises();
     }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-    });
-
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      setImageUri(result.assets[0].uri);
-    }
-  };
-
-  const toggleReminder = (key) => {
-    setReminders((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const markAsSynced = () => setDataSource('synced');
-
-  const addFormLog = () => {
-    const todayString = todayId;
-    const cleanStatus = formType?.trim();
-
-    if (!cleanStatus) {
-      setFormError('Form bilgisini seç.');
-      return;
-    }
-
-    setFormError('');
-    const entry = {
-      date: todayString,
-      status: cleanStatus,
-      createdAt: Date.now(),
-    };
-    setFormEntries((prev) => [entry, ...prev].slice(0, 20));
-  };
+  }, [exerciseLog, exerciseStorageKey, isExerciseHydrated]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <LinearGradient colors={['#0b1630','#0c1f40','#0e264d']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroOverlay} />
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <LinearGradient
+        colors={['#0a1630', '#0c1d3c', '#0e2347']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradient}
+      />
+      <View style={styles.iconCloud}>
+        {ICON_CLOUD.map((icon) => (
+          <MaterialCommunityIcons
+            key={icon.name}
+            name={icon.name}
+            size={icon.size}
+            color={icon.color}
+            style={[styles.iconCloudItem, { top: icon.top, left: icon.left, right: icon.right, bottom: icon.bottom }]}
+          />
+        ))}
+      </View>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.hero}>
+          <View style={styles.logoWrap}>
+            <View style={styles.logoRing} />
+            <View style={styles.logoRingThin} />
+            <View style={styles.logoBadge}>
+              <MaterialCommunityIcons name="run-fast" size={36} color="#e2e8f0" />
+            </View>
+          </View>
+          <Text style={styles.heroTitle}>FitAdvisor</Text>
+          <Text style={styles.heroSubtitle}>Gunluk ozet ve hedefler burada.</Text>
+        </View>
         <View style={styles.headerRow}>
           <View style={styles.headerTextGroup}>
             <Text style={styles.greeting}>Merhaba, {userName}</Text>
-            <Text style={styles.subtitle}>Bugünkü sağlık özetin hazır.</Text>
-            <View style={styles.chipRow}>
-              <View style={styles.chip}>
-                <Text style={styles.chipText}>
-                  Veri kaynağı: {dataSource === 'synced' ? 'Senkron' : 'Manuel'}
-                </Text>
-              </View>
-              {selectedProgram ? (
-                <View style={[styles.chip, styles.chipAlt]}>
-                  <Text style={styles.chipText}>Program: {selectedProgram.title}</Text>
-                </View>
-              ) : null}
-            </View>
+            <Text style={styles.subtitle}>Bugunku saglik ozetin hazir.</Text>
           </View>
           <View style={styles.badge}>
-            <Text style={styles.badgeLabel}>Gün</Text>
+            <Text style={styles.badgeLabel}>Gun</Text>
             <Text style={styles.badgeValue}>3</Text>
-          </View>
-        </View>
-
-        <View style={styles.scoreCard}>
-          <View style={styles.scoreRing}>
-            <Text style={styles.scoreValue}>{score}</Text>
-            <Text style={styles.scoreUnit}>/100</Text>
-          </View>
-          <View style={styles.scoreTextContainer}>
-            <Text style={styles.scoreTitle}>Günlük sağlık skoru</Text>
-            <Text style={styles.scoreDescription}>
-              Adım, su ve antrenman hedeflerin tek yerde toplandı. Devam edersen bugün hedefi
-              yakalayabilirsin.
-            </Text>
-            <View style={styles.dataSourceRow}>
-              <Text style={styles.dataSourceValue}>
-                {dataSource === 'synced' ? 'Senkron verisi' : 'Manuel giriş'}
-              </Text>
-              {dataSource !== 'synced' && (
-                <TouchableOpacity style={styles.dataSourceButton} onPress={markAsSynced}>
-                  <Text style={styles.dataSourceButtonText}>Senkron işaretle</Text>
-                </TouchableOpacity>
-              )}
-            </View>
           </View>
         </View>
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Bugünkü hedeflerin</Text>
+            <Text style={styles.sectionTitle}>Bugunku hedeflerin</Text>
             <Text style={styles.sectionLink}>Detaylar</Text>
           </View>
 
           <View style={styles.statsRow}>
             <View style={styles.statCardWide}>
-              <Text style={styles.statLabel}>Adım</Text>
-              <Text style={styles.statValue}>{todayStats.steps}</Text>
-              <Text style={styles.statSubValue}>/ {todayStats.stepsTarget} adım</Text>
+              <View style={styles.labelRow}>
+                <MaterialCommunityIcons name="shoe-print" size={60} color="#38bdf8" />
+                <Text style={styles.statLabelLarge}>Adim</Text>
+              </View>
+              <Text style={styles.statValue}>{displaySteps}</Text>
+              <Text style={styles.statSubValue}>/ {todayStats.stepsTarget} adim</Text>
               <View style={styles.progressBarBackground}>
                 <View
                   style={[
                     styles.progressBarFill,
-                    { width: `${(todayStats.steps / todayStats.stepsTarget) * 100}%` },
+                    { width: `${(displaySteps / todayStats.stepsTarget) * 100}%` },
                   ]}
                 />
               </View>
               <View style={styles.actionsRow}>
-                <TouchableOpacity style={styles.smallActionButton} onPress={() => incrementSteps(500)}>
+                <TouchableOpacity style={styles.smallActionButton} onPress={() => {}}>
                   <Text style={styles.smallActionText}>+500</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.smallActionButton} onPress={() => incrementSteps(1000)}>
+                <TouchableOpacity style={styles.smallActionButton} onPress={() => {}}>
                   <Text style={styles.smallActionText}>+1000</Text>
                 </TouchableOpacity>
               </View>
@@ -521,22 +456,53 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
           <View style={styles.statsRow}>
             <View style={styles.statCardSmall}>
-              <Text style={styles.statLabel}>Antrenman</Text>
-              <Text style={styles.statValue}>{todayStats.workoutMinutes} dk</Text>
-              <Text style={styles.statSubValue}>/ {todayStats.workoutTarget} dk</Text>
-              <View style={styles.actionsRow}>
-                <TouchableOpacity style={styles.smallActionButton} onPress={() => incrementWorkout(5)}>
-                  <Text style={styles.smallActionText}>+5 dk</Text>
-                </TouchableOpacity>
+              <View style={styles.labelRow}>
+                <MaterialCommunityIcons name="cup-water" size={60} color="#38bdf8" />
+                <Text style={styles.statLabelLarge}>Su</Text>
               </View>
-            </View>
-
-            <View style={styles.statCardSmall}>
-              <Text style={styles.statLabel}>Su</Text>
               <Text style={styles.statValue}>{todayStats.waterLiters} L</Text>
               <Text style={styles.statSubValue}>/ {todayStats.waterTarget} L</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.waterGlassRow}
+              >
+                {Array.from({ length: Math.round((todayStats.waterTarget || 0) / 0.25) }).map(
+                  (_, index) => {
+                    const filled = index < Math.round((todayStats.waterLiters || 0) / 0.25);
+                    return (
+                      <MaterialCommunityIcons
+                        key={`glass-${index}`}
+                        name="cup-water"
+                        size={14}
+                        color={filled ? '#22d3ee' : 'rgba(148,163,184,0.35)'}
+                        style={styles.waterGlassIcon}
+                      />
+                    );
+                  }
+                )}
+              </ScrollView>
               <View style={styles.actionsRow}>
-                <TouchableOpacity style={styles.smallActionButton} onPress={() => incrementWater(0.25)}>
+                <TouchableOpacity
+                  style={styles.smallActionButton}
+                  onPress={() =>
+                    setTodayStats((prev) => ({
+                      ...prev,
+                      waterLiters: Number(Math.max(0, prev.waterLiters - 0.25).toFixed(2)),
+                    }))
+                  }
+                >
+                  <Text style={styles.smallActionText}>-0.25 L</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.smallActionButton}
+                  onPress={() =>
+                    setTodayStats((prev) => ({
+                      ...prev,
+                      waterLiters: Number((prev.waterLiters + 0.25).toFixed(2)),
+                    }))
+                  }
+                >
                   <Text style={styles.smallActionText}>+0.25 L</Text>
                 </TouchableOpacity>
               </View>
@@ -546,26 +512,13 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Günlük Kalori</Text>
-            <Text style={styles.sectionTag}>Hedef: {todayStats.caloriesTarget} kcal</Text>
+            <Text style={styles.sectionTitle}>Gunluk Kalori</Text>
           </View>
-          <Text style={styles.subtitle}>Bugün aldığın toplam kaloriyi yaz.</Text>
+          <Text style={styles.subtitle}>Bugun yediklerin toplam kalori.</Text>
           <View style={styles.calorieRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.statLabel}>Alınan</Text>
-              <TextInput
-                value={todayStats.calories ? String(todayStats.calories) : ''}
-                onChangeText={handleCaloriesChange}
-                placeholder="ör. 1850"
-                placeholderTextColor="#94a3b8"
-                keyboardType="numeric"
-                style={styles.calorieInput}
-              />
-            </View>
-            <View style={styles.calorieSummary}>
               <Text style={styles.statLabel}>Toplam</Text>
               <Text style={styles.calorieTotal}>{todayStats.calories || 0} kcal</Text>
-              <Text style={styles.statSubValue}>/ {todayStats.caloriesTarget} kcal</Text>
             </View>
           </View>
           <View style={styles.progressBarBackground}>
@@ -582,154 +535,161 @@ export default function Dashboard({ profile, goals, selectedProgram }) {
               ]}
             />
           </View>
-        </View>
 
-        <View style={styles.card}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>USDA ile Kalori Ara</Text>
-            {usdaApiKey ? <Text style={styles.sectionTag}>API hazır</Text> : <Text style={styles.sectionTag}>API anahtarı eksik</Text>}
-          </View>
-          <Text style={styles.subtitle}>Besin arat, USDA FoodData Central'dan kaloriyi ekle.</Text>
-          <View style={styles.foodSearchRow}>
-            <TextInput
-              value={foodQuery}
-              onChangeText={setFoodQuery}
-              placeholder="ör. chicken breast"
-              placeholderTextColor="#9ca3af"
-              style={[styles.input, { flex: 1 }]}
-              autoCapitalize="none"
-            />
-            <TouchableOpacity
-              style={[styles.searchButton, foodStatus === 'loading' && styles.searchButtonDisabled]}
-              onPress={handleSearchFood}
-              disabled={foodStatus === 'loading'}
-            >
-              <Text style={styles.searchButtonText}>{foodStatus === 'loading' ? 'Aranıyor...' : 'Ara'}</Text>
-            </TouchableOpacity>
-          </View>
-          {foodError ? <Text style={styles.message}>{foodError}</Text> : null}
-          {foodResults.length > 0 ? (
-            <View style={styles.foodResults}>
-              {foodResults.map((item) => (
-                <View key={item.id} style={styles.foodRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.foodTitle}>{item.description}</Text>
-                    <Text style={styles.foodMeta}>
-                      {item.brand ? `${item.brand} • ` : ''}{Math.round(item.calories || 0)} kcal
-                    </Text>
-                  </View>
-                  <TouchableOpacity style={styles.foodAddButton} onPress={() => addFoodEntry(item)}>
-                    <Text style={styles.foodAddButtonText}>Ekle</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
+          <View style={styles.calorieBreakdown}>
+            <View style={styles.calorieRow}>
+              <Text style={styles.calorieLabel}>Bazal kalori</Text>
+              <Text style={styles.calorieValue}>{basalCalories} kcal</Text>
             </View>
-          ) : null}
-        </View>
-
-        {foodEntries.length > 0 && (
-          <View style={styles.card}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Günün Kalori Kaydı</Text>
-              <Text style={styles.sectionTag}>{foodEntries.length} öğe</Text>
-            </View>
-            <View style={styles.foodResults}>
-              {foodEntries.map((item, index) => (
-                <View key={`${item.id || index}-${index}`} style={styles.foodRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.foodTitle}>{item.description || 'Bilinmeyen'}</Text>
-                    <Text style={styles.foodMeta}>{Math.round(item.calories || 0)} kcal</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        <View style={styles.card}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Hatırlatmalar</Text>
-            <Text style={styles.sectionTag}>Su / Adım / Antrenman</Text>
-          </View>
-          {['water', 'steps', 'workout'].map((key) => (
-            <View
-              key={key}
-              style={[
-                styles.reminderRow,
-                reminders[key] && styles.reminderRowActive,
-              ]}
-            >
-              <Text style={styles.reminderLabel}>
-                {key === 'water' && 'Su bildirimi'}
-                {key === 'steps' && 'Adım bildirimi'}
-                {key === 'workout' && 'Antrenman bildirimi'}
-              </Text>
-              <Switch
-                value={reminders[key]}
-                onValueChange={() => toggleReminder(key)}
-                trackColor={{ true: '#16a34a', false: '#1f2937' }}
-                thumbColor={reminders[key] ? '#dcfce7' : '#e2e8f0'}
+            <View style={styles.progressBarBackground}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  {
+                    width: `${Math.min(100, totalBurn ? (basalCalories / totalBurn) * 100 : 0)}%`,
+                    backgroundColor: '#22c55e',
+                  },
+                ]}
               />
             </View>
-          ))}
-          <Text style={styles.reminderHint}>
-            Bildirimler yerel olarak planlanacak. Expo Notifications ekleyerek gerçek hatırlatmalara geçebilirsin.
-          </Text>
+
+            <View style={styles.calorieRow}>
+              <Text style={styles.calorieLabel}>Egzersiz yakimi</Text>
+              <Text style={styles.calorieValue}>{exerciseBurn} kcal</Text>
+            </View>
+            <View style={styles.progressBarBackground}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  {
+                    width: `${Math.min(100, totalBurn ? (exerciseBurn / totalBurn) * 100 : 0)}%`,
+                    backgroundColor: '#38bdf8',
+                  },
+                ]}
+              />
+            </View>
+
+            <Text style={styles.netCaloriesText}>
+              {netCalories > 0
+                ? `Kalori fazlasi: ${netCalories} kcal`
+                : netCalories < 0
+                  ? `Kalori acigi: ${Math.abs(netCalories)} kcal`
+                  : 'Kalori dengede'}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Son 7 gün</Text>
-            <Text style={styles.sectionTag}>Günlük skor</Text>
+            <Text style={styles.sectionTitle}>Basit egzersizler</Text>
           </View>
-          <View style={styles.historyList}>
-            {last7Days.map((day) => (
-              <View key={day.label} style={styles.historyRow}>
-                <Text style={styles.historyDay}>{day.label}</Text>
-                <View style={styles.historyBarBackground}>
-                  <View style={[styles.historyBarFill, { width: `${day.score}%` }]} />
+          <Text style={styles.subtitle}>
+            Sayi veya dakika gir, yakilan kaloriyi gor.
+          </Text>
+
+          <View style={styles.exerciseRow}>
+            <View style={styles.exerciseLabel}>
+              <MaterialCommunityIcons name="arm-flex" size={20} color="#38bdf8" />
+              <Text style={styles.exerciseText}>Sinav (adet)</Text>
+            </View>
+            <Text style={styles.exerciseKcal}>{calcCalories.pushups} kcal</Text>
+          </View>
+          <TextInput
+            value={exerciseLog.pushups}
+            onChangeText={(value) =>
+              setExerciseLog((prev) => ({ ...prev, pushups: value.replace(/[^0-9]/g, '') }))
+            }
+            keyboardType="number-pad"
+            placeholder="Orn. 30"
+            placeholderTextColor="#94a3b8"
+            style={styles.exerciseInput}
+          />
+
+          <View style={styles.exerciseRow}>
+            <View style={styles.exerciseLabel}>
+              <MaterialCommunityIcons name="human-handsup" size={20} color="#38bdf8" />
+              <Text style={styles.exerciseText}>Mekik (adet)</Text>
+            </View>
+            <Text style={styles.exerciseKcal}>{calcCalories.situps} kcal</Text>
+          </View>
+          <TextInput
+            value={exerciseLog.situps}
+            onChangeText={(value) =>
+              setExerciseLog((prev) => ({ ...prev, situps: value.replace(/[^0-9]/g, '') }))
+            }
+            keyboardType="number-pad"
+            placeholder="Orn. 50"
+            placeholderTextColor="#94a3b8"
+            style={styles.exerciseInput}
+          />
+
+          <View style={styles.exerciseRow}>
+            <View style={styles.exerciseLabel}>
+              <MaterialCommunityIcons name="jump-rope" size={20} color="#38bdf8" />
+              <Text style={styles.exerciseText}>Ip atlama (dk)</Text>
+            </View>
+            <Text style={styles.exerciseKcal}>{calcCalories.rope} kcal</Text>
+          </View>
+          <TextInput
+            value={exerciseLog.ropeMinutes}
+            onChangeText={(value) =>
+              setExerciseLog((prev) => ({ ...prev, ropeMinutes: value.replace(/[^0-9]/g, '') }))
+            }
+            keyboardType="number-pad"
+            placeholder="Orn. 5"
+            placeholderTextColor="#94a3b8"
+            style={styles.exerciseInput}
+          />
+
+          <View style={styles.exerciseRow}>
+            <View style={styles.exerciseLabel}>
+              <MaterialCommunityIcons name="human" size={20} color="#38bdf8" />
+              <Text style={styles.exerciseText}>Plank (dk)</Text>
+            </View>
+            <Text style={styles.exerciseKcal}>{calcCalories.plank} kcal</Text>
+          </View>
+          <TextInput
+            value={exerciseLog.plankMinutes}
+            onChangeText={(value) =>
+              setExerciseLog((prev) => ({ ...prev, plankMinutes: value.replace(/[^0-9]/g, '') }))
+            }
+            keyboardType="number-pad"
+            placeholder="Orn. 3"
+            placeholderTextColor="#94a3b8"
+            style={styles.exerciseInput}
+          />
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Bugunku onerim</Text>
+            <Text style={styles.sectionTag}>Yogunluk: {todayPlan.intensity}</Text>
+          </View>
+
+          <Text style={styles.programTitle}>{todayPlan.title}</Text>
+          <Text style={styles.programSubtitle}>{todayPlan.subtitle}</Text>
+
+          <View style={styles.programList}>
+            {todayPlan.items.map((item, index) => (
+              <View key={`${item.title}-${index}`} style={styles.programItem}>
+                <View style={styles.dot} />
+                <View style={styles.programTextGroup}>
+                  <Text style={styles.programItemTitle}>{item.title}</Text>
+                  <Text style={styles.programItemMeta}>{item.meta}</Text>
                 </View>
-                <Text style={styles.historyValue}>{day.score}</Text>
               </View>
             ))}
           </View>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Bugünkü önerin</Text>
-            <Text style={styles.sectionTag}>Full body • 35 dk</Text>
-          </View>
-
-          <Text style={styles.programTitle}>FitAdvisor Gün 3</Text>
-          <Text style={styles.programSubtitle}>
-            Isınma, temel kuvvet ve hafif kardiyo ile dengeli bir seans.
-          </Text>
 
           <View style={styles.programList}>
-            <View style={styles.programItem}>
-              <View style={styles.dot} />
-              <View style={styles.programTextGroup}>
-                <Text style={styles.programItemTitle}>5 dk hafif yürüyüş</Text>
-                <Text style={styles.programItemMeta}>Isınma • düşük tempo</Text>
+            {adviceBullets.map((text, index) => (
+              <View key={`advice-${index}`} style={styles.programItem}>
+                <View style={styles.dot} />
+                <View style={styles.programTextGroup}>
+                  <Text style={styles.programItemTitle}>{text}</Text>
+                </View>
               </View>
-            </View>
-
-            <View style={styles.programItem}>
-              <View style={styles.dot} />
-              <View style={styles.programTextGroup}>
-                <Text style={styles.programItemTitle}>Squat + Push-up</Text>
-                <Text style={styles.programItemMeta}>3 set • 12 tekrar</Text>
-              </View>
-            </View>
-
-            <View style={styles.programItem}>
-              <View style={styles.dot} />
-              <View style={styles.programTextGroup}>
-                <Text style={styles.programItemTitle}>Plank</Text>
-                <Text style={styles.programItemMeta}>3 set • 30 sn</Text>
-              </View>
-            </View>
+            ))}
           </View>
         </View>
 
@@ -744,22 +704,78 @@ const horizontalPadding = width < 380 ? 16 : 24;
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0a1428',
+    backgroundColor: '#0a1630',
   },
-  heroOverlay: {
+  gradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  iconCloud: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  iconCloudItem: {
     position: 'absolute',
-    top: 0,
-    left: -80,
-    right: -80,
-    height: 230,
-    borderBottomLeftRadius: 48,
-    borderBottomRightRadius: 48,
-    opacity: 0.98,
   },
   scrollContent: {
     paddingHorizontal: horizontalPadding,
     paddingTop: 18,
     paddingBottom: 24,
+    gap: 12,
+  },
+  hero: {
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(20,184,166,0.1)',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(20,184,166,0.25)',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 16 },
+    shadowRadius: 24,
+  },
+  logoWrap: {
+    width: 104,
+    height: 104,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoRing: {
+    position: 'absolute',
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    borderWidth: 2,
+    borderColor: '#22d3ee',
+  },
+  logoRingThin: {
+    position: 'absolute',
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.5)',
+  },
+  logoBadge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+  },
+  heroTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#f8fafc',
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    color: '#cbd5e1',
+    textAlign: 'center',
   },
   headerRow: {
     flexDirection: 'row',
@@ -794,10 +810,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.24)',
   },
-  chipAlt: {
-    backgroundColor: '#0ea5e9',
-    borderColor: '#38bdf8',
-  },
   chipText: {
     color: '#e2e8f0',
     fontSize: 12,
@@ -821,86 +833,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#f8fafc',
   },
-  scoreCard: {
-    flexDirection: 'row',
-    backgroundColor: '#0c1a32',
-    borderRadius: 20,
+  card: {
+    backgroundColor: '#0f172a',
+    borderRadius: 18,
+    padding: 18,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
-    padding: 16,
+    borderColor: 'rgba(148,163,184,0.2)',
     marginBottom: 14,
     shadowColor: '#0ea5e9',
-    shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 24,
-  },
-  scoreRing: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    borderWidth: 8,
-    borderColor: '#10b981',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-    backgroundColor: '#0c1a32',
-  },
-  scoreValue: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#ecfeff',
-  },
-  scoreUnit: {
-    fontSize: 11,
-    color: '#94a3b8',
-  },
-  scoreTextContainer: {
-    flex: 1,
-    gap: 6,
-  },
-  scoreTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#e2e8f0',
-  },
-  scoreDescription: {
-    fontSize: 13,
-    color: '#cbd5e1',
-    lineHeight: 19,
-  },
-  dataSourceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-    marginTop: 4,
-  },
-  dataSourceValue: {
-    fontSize: 12,
-    color: '#f8fafc',
-    fontWeight: '600',
-  },
-  dataSourceButton: {
-    backgroundColor: '#0ea5e9',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  dataSourceButtonText: {
-    fontSize: 12,
-    color: '#0b1120',
-    fontWeight: '700',
-  },
-  card: {
-    backgroundColor: '#0c1a32',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
-    padding: 16,
-    marginBottom: 14,
-    shadowColor: '#020617',
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 14 },
     shadowRadius: 18,
   },
   sectionHeaderRow: {
@@ -910,9 +852,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#e2e8f0',
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#f8fafc',
+    letterSpacing: 0.3,
   },
   sectionLink: {
     fontSize: 12,
@@ -921,55 +864,6 @@ const styles = StyleSheet.create({
   sectionTag: {
     fontSize: 12,
     color: '#94a3b8',
-  },
-  profileRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  profileImage: {
-    width: 92,
-    height: 92,
-    borderRadius: 18,
-    backgroundColor: '#1f2937',
-  },
-  profileTextContainer: {
-    flex: 1,
-    gap: 6,
-  },
-  profileSubtitle: {
-    fontSize: 13,
-    color: '#cbd5e1',
-    lineHeight: 18,
-  },
-  bmiComment: {
-    fontSize: 12,
-    color: '#94a3b8',
-  },
-  profileActions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-    flexWrap: 'wrap',
-  },
-  profileButton: {
-    backgroundColor: '#0c1a32',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
-  },
-  profileAnalyzeButton: {
-    backgroundColor: '#10b981',
-    borderColor: '#10b981',
-  },
-  profileButtonDisabled: {
-    opacity: 0.6,
-  },
-  profileButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#f8fafc',
   },
   statsRow: {
     flexDirection: 'row',
@@ -997,6 +891,16 @@ const styles = StyleSheet.create({
     color: '#cbd5e1',
     marginBottom: 4,
   },
+  statLabelLarge: {
+    fontSize: 36,
+    color: '#cbd5e1',
+    fontWeight: '700',
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   statValue: {
     fontSize: 22,
     fontWeight: '800',
@@ -1007,97 +911,19 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     marginTop: 2,
   },
-  calorieRow: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'flex-end',
-    marginTop: 8,
-  },
-  calorieInput: {
-    backgroundColor: '#0c1a32',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
-    color: '#f8fafc',
-    fontSize: 16,
-  },
-  calorieSummary: {
-    minWidth: 120,
-    backgroundColor: '#0c1a32',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
-    alignItems: 'flex-start',
-  },
-  calorieTotal: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#fef3c7',
-  },
-  foodSearchRow: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-  },
-  searchButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: '#0ea5e9',
-    borderRadius: 10,
-  },
-  searchButtonDisabled: {
-    opacity: 0.6,
-  },
-  searchButtonText: {
-    color: '#0b1120',
-    fontWeight: '800',
-    fontSize: 13,
-  },
-  foodResults: {
-    marginTop: 8,
-    gap: 10,
-  },
-  foodRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#0c1a32',
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
-  },
-  foodTitle: {
-    color: '#e2e8f0',
-    fontWeight: '700',
-  },
-  foodMeta: {
-    color: '#94a3b8',
-    fontSize: 12,
-  },
-  foodAddButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#10b981',
-    borderRadius: 10,
-  },
-  foodAddButtonText: {
-    color: '#0b1120',
-    fontWeight: '800',
-    fontSize: 12,
-  },
-  message: {
-    marginTop: 6,
-    color: '#fca5a5',
-    fontSize: 12,
-  },
   actionsRow: {
     flexDirection: 'row',
     gap: 8,
     marginTop: 10,
+  },
+  waterGlassRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 6,
+  },
+  waterGlassIcon: {
+    marginRight: 2,
   },
   smallActionButton: {
     paddingHorizontal: 10,
@@ -1112,96 +938,35 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
     fontWeight: '600',
   },
-  formRow: {
+  calorieRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
+    gap: 12,
+    alignItems: 'flex-end',
+    marginTop: 6,
   },
-  formInput: {
-    backgroundColor: '#0c1a32',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
-    color: '#f8fafc',
-    fontSize: 14,
-  },
-  formButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: '#10b981',
-    borderRadius: 10,
-  },
-  formButtonText: {
-    color: '#0b1120',
+  calorieTotal: {
+    fontSize: 20,
     fontWeight: '800',
-    fontSize: 13,
+    color: '#fef3c7',
   },
-  formDateBox: {
-    width: 120,
-    backgroundColor: '#0c1a32',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
+  calorieBreakdown: {
+    marginTop: 14,
+    gap: 10,
   },
-  formDateLabel: {
-    color: '#94a3b8',
-    fontSize: 11,
-    marginBottom: 2,
+  calorieLabel: {
+    fontSize: 12,
+    color: '#cbd5e1',
   },
-  formDateValue: {
+  calorieValue: {
+    fontSize: 12,
     color: '#e2e8f0',
     fontWeight: '700',
-    fontSize: 13,
   },
-  formTypeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  formTypeChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
-    backgroundColor: '#0c1a32',
-  },
-  formTypeChipActive: {
-    backgroundColor: '#10b981',
-    borderColor: '#10b981',
-  },
-  formTypeChipText: {
-    color: '#e2e8f0',
+  netCaloriesText: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#94a3b8',
     fontWeight: '600',
-    fontSize: 12,
-  },
-  formTypeChipTextActive: {
-    color: '#0b1120',
-  },
-  formList: {
-    marginTop: 8,
-    gap: 8,
-  },
-  formEntryRow: {
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#0c1a32',
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
-  },
-  formEntryDate: {
-    color: '#94a3b8',
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  formEntryStatus: {
-    color: '#e2e8f0',
-    fontWeight: '700',
   },
   progressBarBackground: {
     marginTop: 10,
@@ -1214,62 +979,6 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 999,
     backgroundColor: '#10b981',
-  },
-  reminderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    backgroundColor: '#0c1a32',
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
-    marginBottom: 8,
-  },
-  reminderRowActive: {
-    borderColor: '#10b981',
-  },
-  reminderLabel: {
-    fontSize: 14,
-    color: '#e2e8f0',
-  },
-  reminderHint: {
-    marginTop: 6,
-    fontSize: 12,
-    color: '#94a3b8',
-  },
-  historyList: {
-    gap: 8,
-    marginTop: 6,
-  },
-  historyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  historyDay: {
-    width: 48,
-    fontSize: 12,
-    color: '#cbd5e1',
-  },
-  historyBarBackground: {
-    flex: 1,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: '#1f2937',
-    overflow: 'hidden',
-  },
-  historyBarFill: {
-    height: '100%',
-    borderRadius: 999,
-    backgroundColor: '#38bdf8',
-  },
-  historyValue: {
-    width: 36,
-    fontSize: 12,
-    textAlign: 'right',
-    color: '#cbd5e1',
   },
   programTitle: {
     fontSize: 16,
@@ -1311,13 +1020,37 @@ const styles = StyleSheet.create({
   footerSpace: {
     height: 24,
   },
+  exerciseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  exerciseLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  exerciseText: {
+    fontSize: 14,
+    color: '#e2e8f0',
+    fontWeight: '600',
+  },
+  exerciseKcal: {
+    fontSize: 13,
+    color: '#fbbf24',
+    fontWeight: '700',
+  },
+  exerciseInput: {
+    backgroundColor: '#0c1a32',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+    color: '#f8fafc',
+    fontSize: 14,
+    marginTop: 8,
+  },
 });
-
-
-
-
-
-
-
-
 

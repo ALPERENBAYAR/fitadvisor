@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -404,6 +405,32 @@ export const getMessagesForConversation = async (userId: string, trainerId: stri
     });
   });
   return items;
+};
+
+export const subscribeToConversation = (
+  userId: string,
+  trainerId: string,
+  onChange: (messages: MessageRow[]) => void
+) => {
+  const conversationId = buildConversationId(userId, trainerId);
+  const q = query(messagesCol, where('conversationId', '==', conversationId), orderBy('createdAt'));
+  return onSnapshot(q, (snap) => {
+    const items: MessageRow[] = [];
+    snap.forEach((docSnap) => {
+      const data = docSnap.data() as any;
+      items.push({
+        id: docSnap.id,
+        conversationId: data.conversationId,
+        participants: data.participants || [],
+        senderId: data.senderId,
+        receiverId: data.receiverId,
+        senderType: data.senderType,
+        text: data.text,
+        createdAt: data.createdAt,
+      });
+    });
+    onChange(items);
+  });
 };
 
 export const getTrainerMessages = async (trainerId: string, take: number = 20) => {

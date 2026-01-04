@@ -10,6 +10,7 @@ const { predictCluster } = require('./services/clusterPredictor');
 const { estimateMaxHr, zoneRange, ZONE_NOTE } = require('./services/hrZones');
 const { buildCoachMessage } = require('./services/recommendationTextGenerator');
 const { trainKMeans } = require('./services/kmeansTrainer');
+const { storeMlSample } = require('./services/firebaseMlStore');
 
 const app = express();
 app.use(cors());
@@ -17,7 +18,7 @@ app.use(bodyParser.json());
 
 const DATA_FILE = path.join(__dirname, 'data.json');
 let lastWatchSnapshot = null;
-const AUTO_TRAIN_EVERY = 20;
+const AUTO_TRAIN_EVERY = 10;
 
 function loadData() {
   try {
@@ -68,6 +69,7 @@ function storeSample({ steps, avgHr }) {
   data.mlSamples = Array.isArray(data.mlSamples) ? data.mlSamples : [];
   data.mlSamples.push({ steps, avgHr, createdAt: new Date().toISOString() });
   saveData(data);
+  storeMlSample({ steps, avgHr });
   return data;
 }
 

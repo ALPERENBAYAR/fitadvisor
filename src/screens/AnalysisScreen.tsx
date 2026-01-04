@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
-  Image,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -14,6 +13,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFormEntriesForUser, saveFormEntry } from '../firebase/service';
 import { apiUrl } from '../utils/api';
@@ -375,7 +375,7 @@ export default function AnalysisScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <LinearGradient
-        colors={['#0b1630', '#0c1f40', '#0e264d']}
+        colors={['#0a1630', '#0c1d3c', '#0e2347']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.heroOverlay}
@@ -397,7 +397,7 @@ export default function AnalysisScreen() {
           </View>
         </View>
 
-        <View style={styles.card}>
+        <View style={styles.cardLarge}>
           <View style={styles.sectionHeader}>
             <Text style={styles.cardTitle}>Adim + Nabiz onerisi</Text>
           </View>
@@ -406,7 +406,10 @@ export default function AnalysisScreen() {
           </Text>
           <View style={[styles.formRow, { marginTop: 8 }]}>
             <View style={styles.formDateBox}>
-              <Text style={styles.formDateLabel}>Adim</Text>
+              <View style={styles.metricLabelRow}>
+                <MaterialCommunityIcons name="shoe-print" size={18} color="#38bdf8" />
+                <Text style={styles.formDateLabel}>Adim</Text>
+              </View>
               <TextInput
                 value={steps}
                 onChangeText={setSteps}
@@ -417,7 +420,10 @@ export default function AnalysisScreen() {
               />
             </View>
             <View style={styles.formDateBox}>
-              <Text style={styles.formDateLabel}>Ortalama nabiz</Text>
+              <View style={styles.metricLabelRow}>
+                <MaterialCommunityIcons name="heart-pulse" size={18} color="#ef4444" />
+                <Text style={styles.formDateLabel}>Ortalama nabiz</Text>
+              </View>
               <TextInput
                 value={avgHr}
                 onChangeText={setAvgHr}
@@ -482,45 +488,6 @@ export default function AnalysisScreen() {
           ) : null}
         </View>
 
-
-        <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.cardTitle}>Görsel analiz</Text>
-            <Text style={styles.sectionTag}>{parsedResult.bmi ? `BMI: ${parsedResult.bmi}` : 'BMI: -'}</Text>
-          </View>
-          <View style={styles.row}>
-            <Image
-              source={{ uri: imageUri ?? 'https://via.placeholder.com/120x120.png?text=You' }}
-              style={styles.preview}
-            />
-            <View style={{ flex: 1, gap: 6 }}>
-              <Text style={styles.cardText}>{parsedResult.summary}</Text>
-              {parsedResult.posture ? <Text style={styles.muted}>Duruş: {parsedResult.posture}</Text> : null}
-              {parsedResult.advice ? <Text style={styles.muted}>Öneri: {parsedResult.advice}</Text> : null}
-              <View style={styles.actions}>
-                <TouchableOpacity style={styles.profileButton} onPress={pickImage}>
-                  <Text style={styles.profileButtonText}>Fotoğraf Seç</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.profileButton,
-                    styles.profileAnalyzeButton,
-                    status === 'loading' && styles.profileButtonDisabled,
-                  ]}
-                  onPress={runAnalysis}
-                  disabled={status === 'loading'}
-                >
-                  {status === 'loading' ? (
-                    <ActivityIndicator size="small" color="#0b1120" />
-                  ) : (
-                    <Text style={styles.profileButtonText}>Analiz et</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-            </View>
-          </View>
-        </View>
 
         <View style={styles.card}>
           <View style={styles.sectionHeader}>
@@ -662,40 +629,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   card: {
-    backgroundColor: '#0c1a32',
-    borderRadius: 18,
+    backgroundColor: '#0f172a',
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.24)',
-    padding: 16,
-    shadowColor: '#020617',
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 8 },
+    padding: 18,
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 14 },
     shadowRadius: 18,
+  },
+  cardLarge: {
+    backgroundColor: '#0f172a',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.28)',
+    padding: 22,
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.22,
+    shadowOffset: { width: 0, height: 18 },
+    shadowRadius: 22,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#e2e8f0',
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#f8fafc',
+    letterSpacing: 0.3,
   },
   sectionTag: {
     fontSize: 12,
     color: '#94a3b8',
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  preview: {
-    width: 120,
-    height: 120,
-    borderRadius: 16,
-    backgroundColor: '#1f2937',
   },
   cardText: {
     color: '#cbd5e1',
@@ -716,7 +685,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0c1a32',
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.24)',
   },
@@ -728,7 +697,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   profileButtonText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: '#f8fafc',
   },
@@ -759,6 +728,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.24)',
+  },
+  metricLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   input: {
     color: '#ffffff',

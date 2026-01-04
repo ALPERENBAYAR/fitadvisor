@@ -1,4 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+﻿import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -24,6 +25,13 @@ type LoginProps = {
 const PROFILE_STORAGE_KEY = 'fitadvisor:profile';
 const SESSION_KEY = 'fitadvisor:session';
 
+const ICON_CLOUD = [
+  { name: 'dumbbell', size: 120, color: 'rgba(148,197,255,0.08)', top: -20, left: 18 },
+  { name: 'heart-pulse', size: 140, color: 'rgba(148,197,255,0.06)', top: 20, right: 16 },
+  { name: 'weight-lifter', size: 160, color: 'rgba(148,197,255,0.05)', bottom: -10, left: 12 },
+  { name: 'run', size: 110, color: 'rgba(148,197,255,0.08)', bottom: 40, right: 24 },
+];
+
 export default function Login({ onLoginSuccess }: LoginProps) {
   const router = useRouter();
   const [username, setUsername] = useState('');
@@ -32,14 +40,14 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
-      Alert.alert('Eksik bilgi', 'Kullanıcı adını ve şifreyi gir.');
+      Alert.alert('Eksik bilgi', 'Kullanici adini ve sifreyi gir.');
       return;
     }
     setIsLoading(true);
     try {
       const data = await loginWithUsername(username.trim(), password, 'user');
       if (!data?.ok || !data?.user) {
-        Alert.alert('Hatalı giriş', 'Kullanıcı adı veya şifre yanlış.');
+        Alert.alert('Hatali giris', 'Kullanici adi veya sifre yanlis.');
         return;
       }
       const user = data.user;
@@ -73,7 +81,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         onLoginSuccess();
       }
     } catch {
-      Alert.alert('Hata', 'Giriş sırasında bir sorun oluştu.');
+      Alert.alert('Hata', 'Giris sirasinda bir sorun olustu.');
     } finally {
       setIsLoading(false);
     }
@@ -87,27 +95,36 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
       />
+      <View style={styles.iconCloud}>
+        {ICON_CLOUD.map((icon) => (
+          <MaterialCommunityIcons
+            key={icon.name}
+            name={icon.name as any}
+            size={icon.size}
+            color={icon.color}
+            style={[styles.iconCloudItem, { top: icon.top, left: icon.left, right: icon.right, bottom: icon.bottom }]}
+          />
+        ))}
+      </View>
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.hero}>
-            <View style={styles.badgeRow}>
+            <View style={styles.logoWrap}>
+              <View style={styles.logoRing} />
+              <View style={styles.logoRingThin} />
               <View style={styles.badge}>
-                <Text style={styles.badgeText}>FA</Text>
+                <MaterialCommunityIcons name="run-fast" size={40} color="#e2e8f0" />
               </View>
-              <Text style={styles.brand}>FitAdvisor</Text>
             </View>
-            <Text style={styles.title}>Fitness yolculuğuna kaldığın yerden devam et.</Text>
-            <Text style={styles.subtitle}>
-              Koyu mavi + turkuaz temasıyla kişisel paneline güvenle giriş yap.
-            </Text>
+            <Text style={styles.title}>Fitness yolculuguna kaldigin yerden devam et.</Text>
           </View>
 
           <View style={styles.card}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Kullanıcı adı</Text>
+              <Text style={styles.label}>Kullanici adi</Text>
               <TextInput
                 value={username}
                 onChangeText={setUsername}
@@ -119,7 +136,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Şifre</Text>
+              <Text style={styles.label}>Sifre</Text>
               <TextInput
                 value={password}
                 onChangeText={setPassword}
@@ -132,24 +149,24 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
             <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={isLoading}>
               <LinearGradient
-                colors={['#14b8a6', '#0ea5e9']}
+                colors={['#22d3ee', '#0ea5e9']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.buttonGradient}
               >
                 <Text style={styles.buttonText}>
-                  {isLoading ? 'Giriş yapılıyor...' : 'Giriş Yap'}
+                  {isLoading ? 'Giris yapiliyor...' : 'Giris Yap'}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity onPress={() => router.push('/register')}>
-            <Text style={styles.link}>Hesabın yok mu? Hemen kaydol</Text>
+            <Text style={styles.link}>Hesabin yok mu? Hemen kaydol</Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => router.push('/trainer-login')}>
-            <Text style={styles.helper}>Trainer girişi için buraya tıkla</Text>
+            <Text style={styles.helper}>Trainer girisi icin buraya tikla</Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -168,6 +185,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  iconCloud: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  iconCloudItem: {
+    position: 'absolute',
+  },
   content: {
     paddingHorizontal: 24,
     paddingTop: 48,
@@ -175,6 +198,7 @@ const styles = StyleSheet.create({
     gap: 18,
   },
   hero: {
+    alignItems: 'center',
     gap: 10,
     backgroundColor: 'rgba(20,184,166,0.1)',
     borderRadius: 20,
@@ -186,37 +210,51 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 18 },
     shadowRadius: 28,
   },
-  badgeRow: {
-    flexDirection: 'row',
+  logoWrap: {
+    width: 120,
+    height: 120,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  logoRing: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 2,
+    borderColor: '#22d3ee',
+  },
+  logoRingThin: {
+    position: 'absolute',
+    width: 98,
+    height: 98,
+    borderRadius: 49,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.5)',
   },
   badge: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#0ea5e9',
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    backgroundColor: '#0f172a',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#0ea5e9',
     shadowOpacity: 0.35,
-    shadowRadius: 12,
-  },
-  badgeText: { color: '#0b1220', fontWeight: '800', fontSize: 18 },
-  brand: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: '#e2e8f0',
-    marginLeft: 10,
+    shadowRadius: 16,
   },
   title: {
     fontSize: 20,
     fontWeight: '800',
     color: '#f8fafc',
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 15,
     color: '#cbd5e1',
     lineHeight: 22,
+    textAlign: 'center',
   },
   card: {
     backgroundColor: '#0f172a',

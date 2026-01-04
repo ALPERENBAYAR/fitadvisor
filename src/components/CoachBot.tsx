@@ -1,49 +1,63 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import {
+  assignTrainerToUser,
+  listTrainers,
+  sendMessage,
+  subscribeToConversation,
+} from '../firebase/service';
+
 const COACH_ENABLED_KEY = 'fitadvisor:coachbotEnabled';
-const TODAY_STATS_KEY = 'fitadvisor:todayStats';
-const WATCH_SNAPSHOT_KEY = 'fitadvisor:watchSnapshot';
+const SESSION_KEY = 'fitadvisor:session';
+const TRAINERS_KEY = 'fitadvisor:trainers';
+const PROFILE_STORAGE_KEY = 'fitadvisor:profile';
 
 const avatarSource = require('../../assets/images/kizgin-antrenor.png');
 
-const buildWarning = (stats: any) => {
-  if (!stats) return null;
-  const stepsTarget = Number(stats.stepsTarget || 0);
-  const waterTarget = Number(stats.waterTarget || 0);
-  const caloriesTarget = Number(stats.caloriesTarget || 0);
-  const steps = Number(stats.steps || 0);
-  const water = Number(stats.waterLiters || 0);
-  const calories = Number(stats.calories || 0);
+type Session = {
+  userId: string;
+  name?: string;
+  username?: string;
+  assignedTrainerId?: string | null;
+};
 
-  if (stepsTarget > 0 && steps / stepsTarget < 0.6) {
-    return 'Adimlar dusuk. Kalk, 10 dk tempolu yuru ve ritmi toparla.';
-  }
-  if (waterTarget > 0 && water / waterTarget < 0.6) {
-    return 'Su icimi dusuk. Hemen bir bardak su ic, bahane yok.';
-  }
-  if (caloriesTarget > 0 && calories > caloriesTarget) {
-    return 'Kalori hedefini astin. Simdi frene bas, daha temiz secimler yap.';
-  }
-  return null;
+type Message = {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  senderType: 'user' | 'trainer';
+  text: string;
+  createdAt: number;
 };
 
 export default function CoachBot() {
   const insets = useSafeAreaInsets();
   const [enabled, setEnabled] = useState(true);
   const [open, setOpen] = useState(false);
-  const [warning, setWarning] = useState<string | null>(null);
-  const lastAlertRef = useRef<number>(0);
+  const [activeTab, setActiveTab] = useState<'trainers' | 'messages'>('trainers');
+  const [session, setSession] = useState<Session | null>(null);
+  const [trainers, setTrainers] = useState<any[]>([]);
+  const [trainerMessage, setTrainerMessage] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
 
   const bottomOffset = Math.max(insets.bottom, 12) + 72;
+  const panelWidth = 320;
+  const panelRight = 12;
+  const avatarSize = 62;
+  const panelBottomGap = Math.round(avatarSize / 2) + 14;
 
   useEffect(() => {
     let mounted = true;
@@ -64,71 +78,223 @@ export default function CoachBot() {
 
   useEffect(() => {
     let active = true;
-    const loadStats = async () => {
+    const loadSession = async () => {
       try {
-        const raw = await AsyncStorage.getItem(TODAY_STATS_KEY);
-        const watchRaw = await AsyncStorage.getItem(WATCH_SNAPSHOT_KEY);
-        if (!active || !raw) return;
-        const parsed = JSON.parse(raw);
-        const stats = parsed?.stats || parsed;
-        const watch = watchRaw ? JSON.parse(watchRaw) : null;
-        const effective = { ...stats };
-        if (watch && Number.isFinite(Number(watch.steps))) {
-          effective.steps = Number(watch.steps);
-        }
-        const warn = buildWarning(effective);
-        if (warn) {
-          const now = Date.now();
-          if (now - lastAlertRef.current > 10 * 60 * 1000) {
-            lastAlertRef.current = now;
-            setWarning(warn);
-            setOpen(true);
-          }
-        } else {
-          setWarning(null);
-        }
+        const storedSession = await AsyncStorage.getItem(SESSION_KEY);
+        if (!active || !storedSession) return;
+        const parsed = JSON.parse(storedSession);
+        setSession(parsed);
       } catch {
         // ignore
       }
     };
-    loadStats();
-    const timer = setInterval(loadStats, 10000);
+    loadSession();
     return () => {
       active = false;
-      clearInterval(timer);
     };
   }, []);
 
-  const headerText = useMemo(() => (warning ? 'Kizgin Antrenor' : 'Kizgin Antrenor'), [warning]);
+  useEffect(() => {
+    if (!open || activeTab !== 'trainers') return;
+    let active = true;
+    const loadTrainers = async () => {
+      try {
+        const remote = await listTrainers();
+        if (!active) return;
+        setTrainers(remote);
+        await AsyncStorage.setItem(TRAINERS_KEY, JSON.stringify(remote));
+      } catch {
+        // ignore
+      }
+    };
+    loadTrainers();
+    return () => {
+      active = false;
+    };
+  }, [open, activeTab]);
+
+  useEffect(() => {
+    if (!open || activeTab !== 'messages') return;
+    if (!session?.userId || !session?.assignedTrainerId) return;
+    const unsub = subscribeToConversation(
+      session.userId,
+      session.assignedTrainerId,
+      (data) => setMessages(data as Message[])
+    );
+    return () => {
+      unsub();
+    };
+  }, [open, activeTab, session?.userId, session?.assignedTrainerId]);
+
+  const assignTrainer = async (trainerId: string, trainerName: string) => {
+    if (!session?.userId) {
+      setTrainerMessage('Once kullanici olarak giris yapmalisin.');
+      return;
+    }
+    try {
+      const res = await assignTrainerToUser(session.userId, trainerId);
+      if (!res?.ok) {
+        setTrainerMessage('Trainer atanamadi.');
+        return;
+      }
+      const updatedSession = { ...session, assignedTrainerId: trainerId };
+      setSession(updatedSession);
+      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(updatedSession));
+      const storedProfile = await AsyncStorage.getItem(PROFILE_STORAGE_KEY);
+      if (storedProfile) {
+        const prof = JSON.parse(storedProfile);
+        await AsyncStorage.setItem(
+          PROFILE_STORAGE_KEY,
+          JSON.stringify({ ...prof, assignedTrainerId: trainerId, assignedTrainerName: trainerName })
+        );
+      }
+      setTrainerMessage('Trainer atandi.');
+      setActiveTab('messages');
+    } catch {
+      setTrainerMessage('Trainer atanirken hata oldu.');
+    }
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || !session?.userId || !session?.assignedTrainerId) return;
+    try {
+      const res = await sendMessage({
+        senderId: session.userId,
+        receiverId: session.assignedTrainerId,
+        senderType: 'user',
+        text: input.trim(),
+      });
+      if (res?.ok && res.message) {
+        setInput('');
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const trainerTitle = useMemo(
+    () => (session?.assignedTrainerId ? 'Trainer degistir' : 'Trainer sec'),
+    [session?.assignedTrainerId]
+  );
 
   if (!enabled) return null;
 
   return (
     <View pointerEvents="box-none" style={styles.root}>
       {open ? (
-        <View style={[styles.chatPanel, { bottom: bottomOffset }]}>
+        <View
+          style={[
+            styles.chatPanel,
+            {
+              bottom: bottomOffset + 26,
+              width: panelWidth,
+              right: panelRight,
+              paddingBottom: panelBottomGap,
+            },
+          ]}
+        >
           <View style={styles.chatHeader}>
-            <Text style={styles.chatTitle}>{headerText}</Text>
+            <Text style={styles.chatTitle}>Antrenor Paneli</Text>
             <Pressable onPress={() => setOpen(false)}>
               <Text style={styles.closeText}>Kapat</Text>
             </Pressable>
           </View>
-          <View style={styles.chatBody}>
-            <View style={[styles.bubble, styles.bubbleBot]}>
-              <Text style={styles.bubbleText}>
-                {warning || 'Gunluk hedeflerini tamamlamayi unutma.'}
+
+          <View style={styles.tabRow}>
+            <Pressable
+              onPress={() => setActiveTab('trainers')}
+              style={[styles.tabButton, activeTab === 'trainers' && styles.tabButtonActive]}
+            >
+              <Text style={[styles.tabText, activeTab === 'trainers' && styles.tabTextActive]}>
+                Trainerlar
               </Text>
-            </View>
+            </Pressable>
+            <Pressable
+              onPress={() => setActiveTab('messages')}
+              style={[styles.tabButton, activeTab === 'messages' && styles.tabButtonActive]}
+            >
+              <Text style={[styles.tabText, activeTab === 'messages' && styles.tabTextActive]}>
+                Mesajlar
+              </Text>
+            </Pressable>
           </View>
+
+          {activeTab === 'trainers' ? (
+            <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+              <Text style={styles.sectionTitle}>{trainerTitle}</Text>
+              {trainers.length === 0 ? (
+                <Text style={styles.meta}>Trainer bulunamadi.</Text>
+              ) : (
+                trainers.map((trainer) => (
+                  <View key={trainer.id} style={styles.trainerItem}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.trainerName}>{trainer.name || trainer.username}</Text>
+                      <Text style={styles.meta}>{trainer.specialty || 'Uzmanlik yok'}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.assignButton}
+                      onPress={() => assignTrainer(trainer.id, trainer.name || trainer.username)}
+                    >
+                      <Text style={styles.assignText}>Ata</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+              {trainerMessage ? <Text style={styles.notice}>{trainerMessage}</Text> : null}
+            </ScrollView>
+          ) : (
+            <View style={styles.body}>
+              {!session?.assignedTrainerId ? (
+                <Text style={styles.meta}>Mesaj icin once trainer ata.</Text>
+              ) : (
+                <>
+                  <ScrollView style={styles.thread} showsVerticalScrollIndicator={false}>
+                    {messages.length === 0 ? (
+                      <Text style={styles.meta}>Henuz mesaj yok.</Text>
+                    ) : (
+                      messages.map((m) => (
+                        <View
+                          key={m.id}
+                          style={[
+                            styles.bubble,
+                            m.senderId === session.userId ? styles.bubbleMe : styles.bubbleOther,
+                          ]}
+                        >
+                          <Text style={styles.bubbleText}>{m.text}</Text>
+                        </View>
+                      ))
+                    )}
+                  </ScrollView>
+                  <View style={styles.inputRow}>
+                    <TextInput
+                      value={input}
+                      onChangeText={setInput}
+                      placeholder="Mesaj yaz..."
+                      placeholderTextColor="#9ca3af"
+                      style={styles.input}
+                    />
+                    <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
+                      <Text style={styles.sendText}>Gonder</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          )}
         </View>
       ) : null}
 
       <Pressable
         onPress={() => setOpen((prev) => !prev)}
-        style={[styles.avatarButton, { bottom: bottomOffset }]}
+        style={[
+          styles.avatarButton,
+          {
+            bottom: bottomOffset - 12,
+            right: panelRight + panelWidth / 2 - avatarSize / 2,
+          },
+        ]}
       >
         <Image source={avatarSource} style={styles.avatarImage} />
-        {warning ? <View style={styles.alertDot} /> : null}
       </Pressable>
     </View>
   );
@@ -165,21 +331,9 @@ const styles = StyleSheet.create({
     height: 54,
     borderRadius: 27,
   },
-  alertDot: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#ef4444',
-    borderWidth: 2,
-    borderColor: '#0f172a',
-  },
   chatPanel: {
     position: 'absolute',
-    right: 12,
-    width: 280,
+    maxHeight: 520,
     backgroundColor: '#0b1220',
     borderRadius: 16,
     borderWidth: 1,
@@ -201,20 +355,111 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 12,
   },
-  chatBody: {
+  tabRow: {
+    flexDirection: 'row',
     gap: 8,
-    maxHeight: 220,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    alignItems: 'center',
+  },
+  tabButtonActive: {
+    borderColor: '#38bdf8',
+    backgroundColor: '#0f172a',
+  },
+  tabText: {
+    color: '#94a3b8',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  tabTextActive: {
+    color: '#e2e8f0',
+  },
+  body: {
+    flex: 1,
+  },
+  sectionTitle: {
+    color: '#e2e8f0',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  trainerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f2937',
+  },
+  trainerName: {
+    color: '#e2e8f0',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  assignButton: {
+    backgroundColor: '#0ea5e9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  assignText: {
+    color: '#0b1120',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  notice: {
+    marginTop: 8,
+    color: '#94a3b8',
+    fontSize: 12,
+  },
+  meta: {
+    color: '#94a3b8',
+    fontSize: 12,
+  },
+  thread: {
+    maxHeight: 250,
   },
   bubble: {
     padding: 10,
     borderRadius: 12,
+    maxWidth: '80%',
+    marginBottom: 8,
   },
-  bubbleBot: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#1f2937',
+  bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#10b981' },
+  bubbleOther: { alignSelf: 'flex-start', backgroundColor: '#1f2937' },
+  bubbleText: { color: '#0b1120', fontWeight: '600' },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
   },
-  bubbleText: {
+  input: {
+    flex: 1,
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#1f2937',
     color: '#f8fafc',
+    fontSize: 13,
+  },
+  sendButton: {
+    backgroundColor: '#0ea5e9',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  sendText: {
+    color: '#0b1120',
+    fontWeight: '800',
     fontSize: 12,
   },
 });

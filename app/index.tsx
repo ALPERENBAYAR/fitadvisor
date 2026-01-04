@@ -1,35 +1,67 @@
+﻿import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 export default function Index() {
   const router = useRouter();
-  const colorScheme = useColorScheme();
 
   return (
-    <View style={[styles.container, colorScheme === 'dark' && styles.containerDark]}>
+    <View style={styles.container}>
       <LinearGradient
-        colors={['#0b1220', '#0b192b']}
+        colors={['#081225', '#0b1c35', '#0f2a4a']}
         style={StyleSheet.absoluteFill}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
       <View style={styles.glowTop} />
       <View style={styles.glowBottom} />
+      <View style={styles.streakContainer}>
+        {STREAKS.map((streak, index) => (
+          <View
+            key={`${streak.rotate}-${index}`}
+            style={[
+              styles.streak,
+              {
+                height: streak.size,
+                opacity: streak.opacity,
+                transform: [{ rotate: `${streak.rotate}deg` }],
+              },
+            ]}
+          />
+        ))}
+      </View>
+      <View style={styles.iconCloud}>
+        {ICON_CLOUD.map((icon) => (
+          <MaterialCommunityIcons
+            key={icon.name}
+            name={icon.name as any}
+            size={icon.size}
+            color={icon.color}
+            style={[styles.iconCloudItem, { top: icon.top, left: icon.left, right: icon.right, bottom: icon.bottom }]}
+          />
+        ))}
+      </View>
       <View style={styles.content}>
-        <Text style={styles.badge}>FA</Text>
+        <View style={styles.logoWrap}>
+          <View style={styles.logoRing} />
+          <View style={styles.logoRingThin} />
+          <View style={styles.badge}>
+            <MaterialCommunityIcons name="run-fast" size={36} color="#e2e8f0" />
+          </View>
+        </View>
         <Text style={styles.title}>FitAdvisor</Text>
         <Text style={styles.subtitle}>
-          Koyu mavi + turkuaz temayla fitness yolculugunu surdur. Kullanici veya Trainer girisi yap.
+          Disiplin, tempo ve odak. Hedeflerini netlestir ve yolculuga simdi basla.
         </Text>
 
         <View style={styles.buttonContainer}>
           <Pressable style={[styles.button, styles.primaryButton]} onPress={() => router.push('/login')}>
-            <Text style={styles.buttonText}>Kullanici Girisi</Text>
+            <Text style={styles.primaryButtonText}>Kullanici Girisi</Text>
           </Pressable>
 
           <Pressable style={[styles.button, styles.secondaryButton]} onPress={() => router.push('/trainer-login')}>
-            <Text style={[styles.buttonText, styles.secondaryButtonText]}>Trainer Girisi</Text>
+            <Text style={styles.secondaryButtonText}>Trainer Girisi</Text>
           </Pressable>
         </View>
       </View>
@@ -37,35 +69,96 @@ export default function Index() {
   );
 }
 
+const STREAKS = [
+  { rotate: -70, size: 220, opacity: 0.4 },
+  { rotate: -50, size: 180, opacity: 0.35 },
+  { rotate: -35, size: 160, opacity: 0.3 },
+  { rotate: -15, size: 120, opacity: 0.22 },
+  { rotate: 10, size: 140, opacity: 0.28 },
+  { rotate: 30, size: 190, opacity: 0.32 },
+  { rotate: 50, size: 240, opacity: 0.35 },
+  { rotate: 70, size: 200, opacity: 0.3 },
+];
+
+const ICON_CLOUD = [
+  { name: 'dumbbell', size: 120, color: 'rgba(148,197,255,0.08)', top: -20, left: 18 },
+  { name: 'heart-pulse', size: 140, color: 'rgba(148,197,255,0.06)', top: 20, right: 16 },
+  { name: 'weight-lifter', size: 160, color: 'rgba(148,197,255,0.05)', bottom: -10, left: 12 },
+  { name: 'run', size: 110, color: 'rgba(148,197,255,0.08)', bottom: 40, right: 24 },
+];
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0b1220',
+    backgroundColor: '#081225',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  containerDark: {
-    backgroundColor: '#0b1220',
-  },
   glowTop: {
     position: 'absolute',
-    top: -120,
-    left: -80,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: '#0ea5e9',
-    opacity: 0.18,
-  },
-  glowBottom: {
-    position: 'absolute',
-    bottom: -140,
-    right: -100,
+    top: -140,
+    left: -100,
     width: 260,
     height: 260,
     borderRadius: 130,
-    backgroundColor: '#10b981',
-    opacity: 0.14,
+    backgroundColor: '#1d4ed8',
+    opacity: 0.2,
+  },
+  glowBottom: {
+    position: 'absolute',
+    bottom: -160,
+    right: -120,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: '#38bdf8',
+    opacity: 0.18,
+  },
+  streakContainer: {
+    position: 'absolute',
+    width: 380,
+    height: 380,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streak: {
+    position: 'absolute',
+    width: 2,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+  },
+  iconCloud: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  iconCloudItem: {
+    position: 'absolute',
+  },
+  logoWrap: {
+    width: 86,
+    height: 86,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  logoRing: {
+    position: 'absolute',
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    borderWidth: 2,
+    borderColor: '#38bdf8',
+  },
+  logoRingThin: {
+    position: 'absolute',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.6)',
   },
   content: {
     alignItems: 'center',
@@ -74,21 +167,18 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   badge: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: '#0ea5e9',
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    color: '#0b1220',
-    fontSize: 20,
-    fontWeight: '800',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#0ea5e9',
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
   },
   title: {
-    fontSize: 42,
+    fontSize: 40,
     fontWeight: '900',
     color: '#e2e8f0',
     marginBottom: 4,
@@ -112,22 +202,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   primaryButton: {
-    backgroundColor: '#10b981',
-    shadowColor: '#10b981',
+    backgroundColor: '#38bdf8',
+    shadowColor: '#38bdf8',
     shadowOpacity: 0.35,
-    shadowRadius: 12,
+    shadowRadius: 16,
   },
   secondaryButton: {
-    backgroundColor: '#0f172a',
+    backgroundColor: 'rgba(15,23,42,0.75)',
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: '#38bdf8',
   },
-  buttonText: {
-    color: '#ffffff',
+  primaryButtonText: {
+    color: '#0b1120',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   secondaryButtonText: {
-    color: '#38bdf8',
+    color: '#bae6fd',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

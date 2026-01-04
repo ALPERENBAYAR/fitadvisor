@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 
-import { getMessagesForConversation, listUsers, sendMessage } from '../firebase/service';
+import { listUsers, sendMessage, subscribeToConversation } from '../firebase/service';
 
 const TRAINER_SESSION_KEY = 'fitadvisor:trainerSession';
 
@@ -56,23 +56,22 @@ export default function TrainerMessages() {
     }
   };
 
-  const loadMessages = async (trainerId: string, studentId: string) => {
-    try {
-      const data = await getMessagesForConversation(studentId, trainerId);
-      setMessages(data);
-    } catch {
-      // ignore
-    }
-  };
-
   useEffect(() => {
     loadSessionAndStudents();
   }, []);
 
   useEffect(() => {
     if (session?.trainerId && selectedStudentId) {
-      loadMessages(session.trainerId, selectedStudentId);
+      const unsub = subscribeToConversation(
+        selectedStudentId,
+        session.trainerId,
+        (data) => setMessages(data)
+      );
+      return () => {
+        unsub();
+      };
     }
+    return undefined;
   }, [session?.trainerId, selectedStudentId]);
 
   const handleSend = async () => {

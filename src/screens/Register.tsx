@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { registerUser } from '../firebase/service';
 
@@ -24,12 +25,6 @@ const SESSION_KEY = 'fitadvisor:session';
 type RegisterProps = {
   onSuccess?: () => void;
 };
-
-const PROGRAMS = [
-  { id: 'fullbody-3', label: 'Full Body 3 Gün' },
-  { id: 'split-4', label: 'Split 4 Gün' },
-  { id: 'fitadvisor-5', label: 'FitAdvisor Performans 5 Gün' },
-];
 
 const goalToGoalType = (goal: string) => {
   const normalized = goal.toLowerCase();
@@ -82,7 +77,7 @@ export default function Register({ onSuccess }: RegisterProps) {
   const handleSubmit = async () => {
     const { name, username, age, goal, programId, password } = form;
     if (!name.trim() || !username.trim() || !age.trim() || !goal.trim() || !password.trim()) {
-      setMessage('Lütfen tüm alanları doldur.');
+      setMessage('Lutfen tum alanlari doldur.');
       return;
     }
     try {
@@ -96,11 +91,11 @@ export default function Register({ onSuccess }: RegisterProps) {
         profilePhoto: photo?.base64 ? `data:image/jpeg;base64,${photo.base64}` : null,
       });
       if (!res?.ok || !res.user) {
-        setMessage('Kayıt başarısız. Lütfen tekrar dene.');
+        setMessage('Kayit basarisiz. Lutfen tekrar dene.');
         return;
       }
       await persistProfileAndSession(res.user);
-      setMessage('Kullanıcı oluşturuldu, oturum açıldı.');
+      setMessage('Kullanici olusturuldu, oturum acildi.');
       setForm({ name: '', username: '', age: '', goal: '', programId: 'fullbody-3', password: '' });
       setPhoto(null);
       if (typeof onSuccess === 'function') {
@@ -109,7 +104,7 @@ export default function Register({ onSuccess }: RegisterProps) {
         router.replace('/dashboard');
       }
     } catch (e: any) {
-      setMessage(e?.message || 'Kayıt sırasında hata oluştu.');
+      setMessage(e?.message || 'Kayit sirasinda hata olustu.');
     }
   };
 
@@ -141,32 +136,41 @@ export default function Register({ onSuccess }: RegisterProps) {
         >
           <ScrollView contentContainerStyle={styles.content}>
             <View style={styles.hero}>
-              <View style={styles.badgeRow}>
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>FitAdvisor</Text>
+              <View style={styles.logoWrap}>
+                <View style={styles.logoRing} />
+                <View style={styles.logoRingThin} />
+                <View style={styles.logoBadge}>
+                  <MaterialCommunityIcons name="run-fast" size={36} color="#e2e8f0" />
                 </View>
-                <Text style={styles.badgeHint}>Güvenli kayıt • Firebase Auth</Text>
               </View>
-              <Text style={styles.heroTitle}>Yeni üyelik oluştur</Text>
-              <Text style={styles.heroSubtitle}>
-                Kişisel hedeflerini gir, programını seç ve profil fotoğrafını ekle. Hepsi tek ekranda.
-              </Text>
+              <Text style={styles.heroTitle}>Yeni uyelik olustur</Text>
+              <Text style={styles.badgeHint}>Guvenli kayit - Firebase Auth</Text>
             </View>
 
             <View style={styles.card}>
+              <View style={styles.photoCard}>
+                <Text style={styles.label}>Profil fotografi (opsiyonel)</Text>
+                <View style={styles.photoActions}>
+                  {photo ? <Image source={{ uri: photo.uri }} style={styles.avatarLarge} /> : <View style={styles.avatarPlaceholder} />}
+                  <TouchableOpacity style={styles.photoButton} onPress={pickPhoto}>
+                    <Text style={styles.photoButtonText}>{photo ? 'Fotografi degistir' : 'Fotograf sec'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               <View style={styles.row}>
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Ad Soyad</Text>
                   <TextInput
                     value={form.name}
                     onChangeText={(v) => setForm((prev) => ({ ...prev, name: v }))}
-                    placeholder="Örn. Alperen Bayar"
+                    placeholder="Orn. Alperen Bayar"
                     placeholderTextColor="#9aa4b5"
                     style={styles.input}
                   />
                 </View>
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Kullanıcı adı</Text>
+                  <Text style={styles.label}>Kullanici adi</Text>
                   <TextInput
                     value={form.username}
                     onChangeText={(v) => setForm((prev) => ({ ...prev, username: v }))}
@@ -178,19 +182,9 @@ export default function Register({ onSuccess }: RegisterProps) {
                 </View>
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Profil fotoğrafı (opsiyonel)</Text>
-                <View style={styles.photoRow}>
-                  <TouchableOpacity style={styles.photoButton} onPress={pickPhoto}>
-                    <Text style={styles.photoButtonText}>{photo ? 'Fotoğrafı değiştir' : 'Fotoğraf seç'}</Text>
-                  </TouchableOpacity>
-                  {photo ? <Image source={{ uri: photo.uri }} style={styles.avatar} /> : null}
-                </View>
-              </View>
-
               <View style={styles.row}>
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Yaş</Text>
+                  <Text style={styles.label}>Yas</Text>
                   <TextInput
                     value={form.age}
                     onChangeText={(v) => setForm((prev) => ({ ...prev, age: v }))}
@@ -213,33 +207,11 @@ export default function Register({ onSuccess }: RegisterProps) {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Program</Text>
-                <View style={styles.programRow}>
-                  {PROGRAMS.map((item) => {
-                    const active = item.id === form.programId;
-                    return (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={[styles.programChip, active && styles.programChipActive]}
-                        onPress={() => setForm((prev) => ({ ...prev, programId: item.id }))}
-                      >
-                        <Text
-                          style={[styles.programChipText, active && styles.programChipTextActive]}
-                        >
-                          {item.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Şifre</Text>
+                <Text style={styles.label}>Sifre</Text>
                 <TextInput
                   value={form.password}
                   onChangeText={(v) => setForm((prev) => ({ ...prev, password: v }))}
-                  placeholder="••••••••"
+                  placeholder="********"
                   placeholderTextColor="#9aa4b5"
                   secureTextEntry
                   style={styles.input}
@@ -254,7 +226,7 @@ export default function Register({ onSuccess }: RegisterProps) {
                 end={{ x: 1, y: 1 }}
                 style={styles.buttonGradient}
               >
-                <Text style={styles.buttonText}>Kayıt Ol ve Başla</Text>
+                <Text style={styles.buttonText}>Kayit Ol ve Basla</Text>
               </LinearGradient>
             </TouchableOpacity>
 
@@ -290,35 +262,52 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   hero: {
-    backgroundColor: 'rgba(20,184,166,0.08)',
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(20,184,166,0.28)',
-    gap: 8,
-  },
-  badgeRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-  },
-  badge: {
-    backgroundColor: 'rgba(14,165,233,0.16)',
-    paddingHorizontal: 12,
+    gap: 12,
     paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(14,165,233,0.35)',
-  },
-  badgeText: {
-    color: '#e0f2fe',
-    fontWeight: '700',
-    fontSize: 13,
-    letterSpacing: 0.4,
   },
   badgeHint: {
     color: '#9aa4b5',
     fontSize: 13,
+  },
+  logoWrap: {
+    width: 110,
+    height: 110,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoRing: {
+    position: 'absolute',
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    borderWidth: 2,
+    borderColor: '#22d3ee',
+  },
+  logoRingThin: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.5)',
+  },
+  logoBadge: {
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+  },
+  logoBadgeText: {
+    color: '#e2e8f0',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 1.2,
   },
   heroTitle: {
     fontSize: 28,
@@ -365,10 +354,18 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     fontSize: 15,
   },
-  photoRow: {
+  photoCard: {
+    backgroundColor: 'rgba(12, 24, 40, 0.7)',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.18)',
+  },
+  photoActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginTop: 8,
   },
   photoButton: {
     backgroundColor: '#0ea5e9',
@@ -380,37 +377,20 @@ const styles = StyleSheet.create({
     color: '#0b1220',
     fontWeight: '700',
   },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  avatarLarge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     borderWidth: 2,
     borderColor: '#14b8a6',
   },
-  programRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  programChip: {
+  avatarPlaceholder: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 2,
+    borderColor: 'rgba(148,163,184,0.4)',
     backgroundColor: '#0b1220',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.2)',
-  },
-  programChipActive: {
-    borderColor: '#14b8a6',
-    backgroundColor: 'rgba(20,184,166,0.12)',
-  },
-  programChipText: {
-    color: '#cbd5e1',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  programChipTextActive: {
-    color: '#34d399',
   },
   button: {
     borderRadius: 14,
@@ -439,3 +419,4 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
   },
 });
+

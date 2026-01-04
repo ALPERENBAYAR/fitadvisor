@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 const getConfiguredBase = () =>
+  process.env.EXPO_PUBLIC_API_URL ||
   Constants.expoConfig?.extra?.apiBaseUrl ||
   // @ts-ignore - manifest is kept for backward compatibility on some Expo versions
   Constants.manifest?.extra?.apiBaseUrl;

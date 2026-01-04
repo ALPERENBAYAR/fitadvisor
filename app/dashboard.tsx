@@ -8,9 +8,6 @@ import { useRouter } from "expo-router";
 import AnalysisScreen from "../src/screens/AnalysisScreen";
 import Dashboard from "../src/screens/Dashboard";
 import ProfileScreen from "../src/screens/ProfileScreen";
-import ProgramScreen from "../src/screens/ProgramScreen";
-import PersonalTrainers from "../src/screens/PersonalTrainers";
-import Messages from "../src/screens/Messages";
 import CalorieSearch from "../src/screens/CalorieSearch";
 import { updateUserProfile } from "../src/firebase/service";
 import CoachBot from "../src/components/CoachBot";
@@ -41,30 +38,41 @@ type DailyGoals = {
 
 function calculateDailyGoals(profile: Profile): DailyGoals {
   const goal = profile.goalType;
+  const weightKg = profile.weight ? Number(profile.weight) : null;
+  const waterFromWeight = Number.isFinite(weightKg)
+    ? Number((weightKg * 0.04).toFixed(1))
+    : null;
 
   if (goal === "gain_muscle") {
-    return { stepsTarget: 7000, workoutMinutesTarget: 45, waterTargetLiters: 2.8 };
+    return {
+      stepsTarget: 7000,
+      workoutMinutesTarget: 45,
+      waterTargetLiters: waterFromWeight ?? 2.8,
+    };
   }
   if (goal === "maintain") {
-    return { stepsTarget: 7000, workoutMinutesTarget: 30, waterTargetLiters: 2.2 };
+    return {
+      stepsTarget: 7000,
+      workoutMinutesTarget: 30,
+      waterTargetLiters: waterFromWeight ?? 2.2,
+    };
   }
-  return { stepsTarget: 9000, workoutMinutesTarget: 35, waterTargetLiters: 2.5 };
+  return {
+    stepsTarget: 9000,
+    workoutMinutesTarget: 35,
+    waterTargetLiters: waterFromWeight ?? 2.5,
+  };
 }
 
 const Tab = createBottomTabNavigator();
 
-type SelectedProgram = { id: string; title: string } | null;
-
 const PROFILE_STORAGE_KEY = "fitadvisor:profile";
-const PROGRAM_STORAGE_KEY = "fitadvisor:program";
 const SESSION_KEY = "fitadvisor:session";
 const USERS_KEY = "fitadvisor:users";
 
 export default function DashboardScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [selectedProgram, setSelectedProgram] = useState<SelectedProgram>(null);
-  const [completedDays, setCompletedDays] = useState<Record<string, boolean>>({});
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile>({
     age: "25",
@@ -106,21 +114,6 @@ export default function DashboardScreen() {
     loadSession();
   }, []);
 
-  useEffect(() => {
-    const loadProgram = async () => {
-      try {
-        const stored = await AsyncStorage.getItem(PROGRAM_STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed?.selectedProgram) setSelectedProgram(parsed.selectedProgram);
-          if (parsed?.completedDays) setCompletedDays(parsed.completedDays);
-        }
-      } catch {
-        // ignore
-      }
-    };
-    loadProgram();
-  }, []);
 
   const handleUpdateProfile = async (updated: Profile) => {
     const updatedWithPhoto: Profile = { ...profile, ...updated };
@@ -165,24 +158,6 @@ export default function DashboardScreen() {
     }
   };
 
-  const handleSelectProgram = async (program: SelectedProgram) => {
-    const nextCompleted = program ? {} : completedDays;
-    setSelectedProgram(program);
-    setCompletedDays(nextCompleted);
-    try {
-      await AsyncStorage.setItem(PROGRAM_STORAGE_KEY, JSON.stringify({ selectedProgram: program, completedDays: nextCompleted }));
-    } catch {
-      // ignore
-    }
-  };
-
-  const toggleDayCompletion = async (dayKey: string) => {
-    setCompletedDays((prev) => {
-      const next = { ...prev, [dayKey]: !prev[dayKey] };
-      AsyncStorage.setItem(PROGRAM_STORAGE_KEY, JSON.stringify({ selectedProgram, completedDays: next }));
-      return next;
-    });
-  };
 
   const handleLogout = async () => {
     try {
@@ -233,21 +208,9 @@ export default function DashboardScreen() {
       }}
     >
       <Tab.Screen name="Ana">
-        {() => <Dashboard profile={profile} goals={goals} selectedProgram={selectedProgram} />}
-      </Tab.Screen>
-      <Tab.Screen name="Program">
-        {() => (
-          <ProgramScreen
-            selectedProgramId={selectedProgram?.id ?? null}
-            completedDays={completedDays}
-            onSelectProgram={handleSelectProgram}
-            onToggleDay={toggleDayCompletion}
-          />
-        )}
+        {() => <Dashboard profile={profile} goals={goals} />}
       </Tab.Screen>
       <Tab.Screen name="Kalori" component={CalorieSearch} />
-      <Tab.Screen name="Mesajlar" component={Messages} />
-      <Tab.Screen name="Trainerlar" component={PersonalTrainers} />
       <Tab.Screen name="Analiz" component={AnalysisScreen} />
       <Tab.Screen name="Profil">
         {() => <ProfileScreen profile={profile} onUpdateProfile={handleUpdateProfile} />}

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
-import { getMessagesForConversation, sendMessage } from '../firebase/service';
+import { sendMessage, subscribeToConversation } from '../firebase/service';
 
 const SESSION_KEY = 'fitadvisor:session';
 const TRAINERS_KEY = 'fitadvisor:trainers';
@@ -42,23 +42,22 @@ export default function Messages() {
     }
   };
 
-  const loadMessages = async (userId: string, trainerId: string) => {
-    try {
-      const data = await getMessagesForConversation(userId, trainerId);
-      setMessages(data);
-    } catch {
-      // ignore
-    }
-  };
-
   useEffect(() => {
     loadSessionAndTrainer();
   }, []);
 
   useEffect(() => {
     if (session?.userId && session?.assignedTrainerId) {
-      loadMessages(session.userId, session.assignedTrainerId);
+      const unsub = subscribeToConversation(
+        session.userId,
+        session.assignedTrainerId,
+        (data) => setMessages(data)
+      );
+      return () => {
+        unsub();
+      };
     }
+    return undefined;
   }, [session?.userId, session?.assignedTrainerId]);
 
   const handleSend = async () => {
