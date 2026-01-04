@@ -43,9 +43,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       Alert.alert('Eksik bilgi', 'Kullanici adini ve sifreyi gir.');
       return;
     }
+    const usernameClean = username.trim();
     setIsLoading(true);
     try {
-      const data = await loginWithUsername(username.trim(), password, 'user');
+      const data = await loginWithUsername(usernameClean, password, 'user');
       if (!data?.ok || !data?.user) {
         Alert.alert('Hatali giris', 'Kullanici adi veya sifre yanlis.');
         return;
@@ -70,8 +71,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         assignedTrainerId: user.assignedTrainerId ?? null,
         profilePhoto: user.profilePhoto || null,
       };
-      await AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
-      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      await Promise.all([
+        AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile)),
+        AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session)),
+      ]);
 
       const hasCompleteProfile =
         profile.age && profile.height && profile.weight && profile.gender && profile.goalType;

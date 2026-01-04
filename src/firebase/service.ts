@@ -96,12 +96,21 @@ export type FormLogEntry = {
   createdAt?: any;
 };
 
+export type SleepEntry = {
+  userId: string;
+  date: string; // YYYY-MM-DD
+  hours: number;
+  source?: 'manual' | 'device';
+  updatedAt?: any;
+};
+
 const usersCol = collection(firebaseDb, 'users');
 const trainersCol = collection(firebaseDb, 'trainers');
 const messagesCol = collection(firebaseDb, 'messages');
 const notificationsCol = collection(firebaseDb, 'notifications');
 const caloriesCol = collection(firebaseDb, 'calories');
 const formEntriesCol = collection(firebaseDb, 'formEntries');
+const sleepEntriesCol = collection(firebaseDb, 'sleepEntries');
 
 const usernameToEmail = (username: string) => `${username.trim().toLowerCase()}@fitadvisor.local`;
 
@@ -358,6 +367,57 @@ export const getNotificationsForTrainer = async (trainerId: string) => {
       userGoal: data.userGoal,
       type: data.type || 'assign_request',
       createdAt: data.createdAt?.toMillis?.() ?? data.createdAt ?? timestampNow(),
+    });
+  });
+  return items;
+};
+
+export const saveSleepEntry = async (payload: SleepEntry) => {
+  const docId = `${payload.userId}_${payload.date}`;
+  await setDoc(
+    doc(sleepEntriesCol, docId),
+    {
+      userId: payload.userId,
+      date: payload.date,
+      hours: payload.hours,
+      source: payload.source || 'manual',
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+  return { ok: true };
+};
+
+export const getSleepEntryForDate = async (userId: string, date: string) => {
+  const docId = `${userId}_${date}`;
+  const snap = await getDoc(doc(sleepEntriesCol, docId));
+  if (!snap.exists()) return { ok: false, hours: 0, source: 'manual' as const };
+  const data = snap.data() as any;
+  return {
+    ok: true,
+    hours: Number(data.hours || 0),
+    source: (data.source as 'manual' | 'device') || 'manual',
+  };
+};
+
+export const getSleepEntriesForUser = async (userId: string, take: number = 30) => {
+  let snap;
+  try {
+    const q = query(sleepEntriesCol, where('userId', '==', userId), orderBy('date', 'desc'), limit(take));
+    snap = await getDocs(q);
+  } catch {
+    const q = query(sleepEntriesCol, where('userId', '==', userId), limit(take));
+    snap = await getDocs(q);
+  }
+  const items: SleepEntry[] = [];
+  snap.forEach((docSnap) => {
+    const data = docSnap.data() as any;
+    items.push({
+      userId: data.userId,
+      date: data.date,
+      hours: Number(data.hours || 0),
+      source: (data.source as 'manual' | 'device') || 'manual',
+      updatedAt: data.updatedAt?.toMillis?.() ?? data.updatedAt ?? undefined,
     });
   });
   return items;

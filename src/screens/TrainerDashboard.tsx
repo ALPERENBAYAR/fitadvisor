@@ -18,6 +18,7 @@ import {
   getDailyCalories,
   getNotificationsForTrainer,
   getTrainerMessages,
+  subscribeToConversation,
   listUsers,
   updateTrainerProfile,
 } from '../firebase/service';
@@ -80,7 +81,7 @@ export default function TrainerDashboard() {
       setNotifications(sortedNotifs);
 
       const msgData = await getTrainerMessages(parsed.trainerId, 10);
-      setMessages(msgData);
+      setMessages(msgData || []);
     } catch {
       // sessizce geç
     }
@@ -95,6 +96,38 @@ export default function TrainerDashboard() {
     await loadDashboard();
     setRefreshing(false);
   };
+
+  useEffect(() => {
+    const unsubscribes: (() => void)[] = [];
+    const attachLiveMessages = async () => {
+      try {
+        const storedSession = await AsyncStorage.getItem(TRAINER_SESSION_KEY);
+        const parsed = storedSession ? JSON.parse(storedSession) : null;
+        if (!parsed?.trainerId) return;
+        const users = await listUsers(parsed.trainerId);
+        users.forEach((u: any) => {
+          const unsub = subscribeToConversation(u.id, parsed.trainerId, (data) => {
+            setMessages((prev) => {
+              const merged = [...prev];
+              data.forEach((msg) => {
+                const exists = merged.find((m) => m.id === msg.id);
+                if (!exists) merged.push(msg);
+              });
+              merged.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+              return merged.slice(-50);
+            });
+          });
+          unsubscribes.push(unsub);
+        });
+      } catch {
+        // ignore live subscription errors
+      }
+    };
+    attachLiveMessages();
+    return () => {
+      unsubscribes.forEach((fn) => fn?.());
+    };
+  }, []);
 
   const handlePickPhoto = async () => {
     if (!session?.trainerId) return;

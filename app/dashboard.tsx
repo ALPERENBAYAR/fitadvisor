@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { TouchableOpacity, Text, Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 
 import AnalysisScreen from "../src/screens/AnalysisScreen";
 import Dashboard from "../src/screens/Dashboard";
@@ -177,17 +178,7 @@ export default function DashboardScreen() {
     <View style={{ flex: 1, backgroundColor: "#0a1428" }}>
       <Tab.Navigator
       screenOptions={{
-        headerShown: true,
-        headerTitleAlign: "center",
-        headerStyle: { backgroundColor: "#0a1428" },
-        headerTitleStyle: { color: "#e2e8f0", fontWeight: "800" },
-        headerTintColor: "#e2e8f0",
-        headerShadowVisible: false,
-        headerRight: () => (
-          <TouchableOpacity onPress={handleLogout} style={{ paddingHorizontal: 12, paddingVertical: 6 }}>
-            <Text style={{ color: "#ef4444", fontWeight: "700" }}>Cikis</Text>
-          </TouchableOpacity>
-        ),
+        headerShown: false,
         tabBarActiveTintColor: "#22c55e",
         tabBarInactiveTintColor: "#94a3b8",
         tabBarStyle: {
@@ -207,12 +198,43 @@ export default function DashboardScreen() {
         sceneContainerStyle: { backgroundColor: "#0a1428" },
       }}
     >
-      <Tab.Screen name="Ana">
+      <Tab.Screen
+        name="Ana"
+        options={{
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "home" : "home-outline"} size={18} color={color} />
+          ),
+        }}
+      >
         {() => <Dashboard profile={profile} goals={goals} />}
       </Tab.Screen>
-      <Tab.Screen name="Kalori" component={CalorieSearch} />
-      <Tab.Screen name="Analiz" component={AnalysisScreen} />
-      <Tab.Screen name="Profil">
+      <Tab.Screen
+        name="Kalori"
+        component={CalorieSearch}
+        options={{
+          title: "Kalori",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "flame" : "flame-outline"} size={18} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Analiz"
+        component={AnalysisScreen}
+        options={{
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "analytics" : "analytics-outline"} size={18} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Profil"
+        options={{
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "person" : "person-outline"} size={18} color={color} />
+          ),
+        }}
+      >
         {() => <ProfileScreen profile={profile} onUpdateProfile={handleUpdateProfile} />}
       </Tab.Screen>
     </Tab.Navigator>

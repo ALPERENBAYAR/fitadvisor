@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState } from 'react';
+import { useRouter } from 'expo-router';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -21,6 +22,7 @@ type TrainerLoginProps = {
 };
 
 export default function TrainerLogin({ onSuccess, onGoRegister }: TrainerLoginProps) {
+  const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -49,6 +51,7 @@ export default function TrainerLogin({ onSuccess, onGoRegister }: TrainerLoginPr
         })
       );
       if (typeof onSuccess === 'function') onSuccess();
+      router.replace('/trainer-dashboard');
     } catch (e) {
       alert('Giriş sırasında bir hata oluştu.');
     } finally {

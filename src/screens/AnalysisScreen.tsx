@@ -10,6 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Image,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -171,7 +172,7 @@ export default function AnalysisScreen() {
       const endTime = new Date();
       const startTime = new Date();
       startTime.setHours(0, 0, 0, 0);
-      const timeRangeFilter = {
+      const timeRangeFilter: { operator: 'between'; startTime: string; endTime: string } = {
         operator: 'between',
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
@@ -545,10 +546,14 @@ export default function AnalysisScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.formEntryDate}>{entry.date}</Text>
                     <Text style={styles.formEntryStatus}>{entry.status}</Text>
-                    {entry.photoUri || entry.photoBase64 ? (
+                        {entry.photoUri || entry.photoBase64 ? (
                       <View style={styles.formPhotoRow}>
                         <Image
-                          source={{ uri: entry.photoBase64 ? `data:image/jpeg;base64,${entry.photoBase64}` : entry.photoUri }}
+                          source={{
+                            uri: entry.photoBase64
+                              ? `data:image/jpeg;base64,${entry.photoBase64}`
+                              : entry.photoUri || undefined,
+                          }}
                           style={styles.formEntryImage}
                         />
                         <Text style={styles.muted}>Foto kaydedildi</Text>
@@ -579,6 +584,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#0a1428',
+    overflow: 'hidden',
   },
   heroOverlay: {
     position: 'absolute',

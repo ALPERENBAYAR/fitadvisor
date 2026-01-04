@@ -1,9 +1,11 @@
 ﻿import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+import { useRouter } from 'expo-router';
 import {
   Dimensions,
+  Image,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -13,8 +15,11 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { getSleepEntryForDate, saveSleepEntry } from '../firebase/service';
 
 const { width } = Dimensions.get('window');
+const heroArcWidth = Math.min(width * 1.05, 580);
+const heroArcHeight = Math.round(heroArcWidth * 0.6);
 
 const STORAGE_TODAY_KEY = 'fitadvisor:todayStats';
 const STORAGE_DATA_SOURCE_KEY = 'fitadvisor:dataSource';
@@ -22,6 +27,11 @@ const STORAGE_FORM_LOG_KEY = 'fitadvisor:formLog';
 const WATCH_SNAPSHOT_KEY = 'fitadvisor:watchSnapshot';
 const WATER_STORAGE_PREFIX = 'fitadvisor:water:';
 const EXERCISE_STORAGE_PREFIX = 'fitadvisor:exerciseLog:';
+const SLEEP_STORAGE_PREFIX = 'fitadvisor:sleep:';
+const SLEEP_HISTORY_KEY = 'fitadvisor:sleepHistory';
+const SESSION_KEY = 'fitadvisor:session';
+const TRAINERS_KEY = 'fitadvisor:trainers';
+const TRAINER_CARD_WIDTH = 100;
 
 const ICON_CLOUD = [
   { name: 'dumbbell', size: 130, color: 'rgba(148,197,255,0.08)', top: -20, left: 10 },
@@ -31,6 +41,7 @@ const ICON_CLOUD = [
 ];
 
 export default function Dashboard({ profile, goals }) {
+  const router = useRouter();
   const [todayStats, setTodayStats] = useState({
     steps: 0,
     stepsTarget: goals?.stepsTarget ?? 8000,
@@ -51,6 +62,21 @@ export default function Dashboard({ profile, goals }) {
     plankMinutes: '',
   });
   const [isExerciseHydrated, setIsExerciseHydrated] = useState(false);
+  const [sleepHours, setSleepHours] = useState('');
+  const [sleepStatus, setSleepStatus] = useState('');
+  const [sessionUserId, setSessionUserId] = useState(null);
+  const [isSleepHydrated, setIsSleepHydrated] = useState(false);
+  const [trainerPreview, setTrainerPreview] = useState([]);
+  const fallbackTrainers = [
+    { id: 't1', name: 'Ayse Yılmaz', specialty: 'Kuvvet', profilePhoto: null },
+    { id: 't2', name: 'Mehmet Demir', specialty: 'Kardiyo', profilePhoto: null },
+    { id: 't3', name: 'Selin Aksoy', specialty: 'Mobilite', profilePhoto: null },
+  ];
+  const trainerScrollRef = useRef<ScrollView | null>(null);
+  const trainerTrack = useMemo(
+    () => (trainerPreview.length > 1 ? [...trainerPreview, ...trainerPreview] : trainerPreview),
+    [trainerPreview]
+  );
 
   const userName = profile?.name || 'Alperen';
   const weightKg = profile?.weight ? Number(profile.weight) : null;
@@ -61,6 +87,7 @@ export default function Dashboard({ profile, goals }) {
   const todayId = new Date().toISOString().slice(0, 10);
   const waterStorageKey = `${WATER_STORAGE_PREFIX}${todayId}`;
   const exerciseStorageKey = `${EXERCISE_STORAGE_PREFIX}${todayId}`;
+  const sleepStorageKey = `${SLEEP_STORAGE_PREFIX}${todayId}`;
   const watchReady = todayStats.steps > 0 || (Number.isFinite(watchAvgHr) && watchAvgHr > 0);
   const displaySteps = watchReady ? todayStats.steps : 0;
   const caloriesRatio = todayStats.caloriesTarget
@@ -221,6 +248,96 @@ export default function Dashboard({ profile, goals }) {
 
   const adviceBullets = buildAdviceBullets();
 
+  const movingMinutes = todayStats.workoutMinutes || 0;
+  const movingTarget = todayStats.workoutTarget || 30;
+  const stepsProgress = todayStats.stepsTarget ? Math.min(1, displaySteps / todayStats.stepsTarget) : 0;
+  const caloriesProgress = todayStats.caloriesTarget
+    ? Math.min(1, (todayStats.calories || 0) / todayStats.caloriesTarget)
+    : 0;
+  const movingProgress = movingTarget ? Math.min(1, movingMinutes / movingTarget) : 0;
+  const handleSaveSleep = async () => {
+    const normalized = String(sleepHours || '').trim();
+    const hoursNum = Number(normalized.replace(',', '.'));
+    if (!Number.isFinite(hoursNum) || hoursNum < 0) {
+      setSleepStatus('Saat bilgisi sayi olmali.');
+      return;
+    }
+    try {
+      await AsyncStorage.setItem(sleepStorageKey, String(hoursNum));
+      setSleepHours(String(hoursNum));
+      if (sessionUserId) {
+        await saveSleepEntry({
+          userId: sessionUserId,
+          date: todayId,
+          hours: hoursNum,
+          source: dataSource === 'synced' ? 'device' : 'manual',
+        });
+      }
+      try {
+        const historyRaw = await AsyncStorage.getItem(SLEEP_HISTORY_KEY);
+        const history = historyRaw ? JSON.parse(historyRaw) : [];
+        const entry = {
+          date: todayId,
+          hours: hoursNum,
+          source: dataSource === 'synced' ? 'device' : 'manual',
+          createdAt: Date.now(),
+        };
+        const nextHistory = Array.isArray(history) ? [entry, ...history].slice(0, 90) : [entry];
+        await AsyncStorage.setItem(SLEEP_HISTORY_KEY, JSON.stringify(nextHistory));
+      } catch {
+        // ignore history save errors
+      }
+      setSleepStatus('Uyku kaydedildi.');
+    } catch {
+      setSleepStatus('Uyku kaydedilemedi.');
+    }
+  };
+
+  useEffect(() => {
+    const loadSession = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(SESSION_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.userId) setSessionUserId(parsed.userId);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    loadSession();
+  }, []);
+
+  useEffect(() => {
+    const loadTrainers = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(TRAINERS_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length) {
+            setTrainerPreview(parsed.slice(0, 5));
+            return;
+          }
+        }
+        setTrainerPreview(fallbackTrainers);
+      } catch {
+        setTrainerPreview(fallbackTrainers);
+      }
+    };
+    loadTrainers();
+  }, []);
+
+  useEffect(() => {
+    if (!trainerTrack.length || trainerTrack.length < 2) return;
+    let idx = 0;
+    const step = TRAINER_CARD_WIDTH + 14;
+    const interval = setInterval(() => {
+      idx = (idx + 1) % trainerTrack.length;
+      trainerScrollRef.current?.scrollTo({ x: idx * step, animated: true });
+    }, 2200);
+    return () => clearInterval(interval);
+  }, [trainerTrack]);
+
   useEffect(() => {
     setTodayStats((prev) => ({ ...prev, waterTarget }));
   }, [waterTarget]);
@@ -291,6 +408,27 @@ export default function Dashboard({ profile, goals }) {
           }
         }
 
+        let sleepApplied = false;
+        const storedSleep = await AsyncStorage.getItem(sleepStorageKey);
+        if (storedSleep !== null && storedSleep !== undefined) {
+          setSleepHours(String(storedSleep));
+          sleepApplied = true;
+        }
+        if (!sleepApplied && sessionUserId) {
+          try {
+            const sleepRes = await getSleepEntryForDate(sessionUserId, todayId);
+            if (sleepRes.ok) {
+              setSleepHours(String(sleepRes.hours ?? ''));
+              sleepApplied = true;
+            }
+          } catch {
+            // ignore remote load errors
+          }
+        }
+        if (!sleepApplied) {
+          setSleepHours('');
+        }
+
         const storedWatch = await AsyncStorage.getItem(WATCH_SNAPSHOT_KEY);
         let watchApplied = false;
         if (storedWatch) {
@@ -314,11 +452,12 @@ export default function Dashboard({ profile, goals }) {
         // ignore
       } finally {
         setIsHydrated(true);
+        setIsSleepHydrated(true);
       }
     };
 
     loadData();
-  }, [todayId, waterStorageKey, waterTarget]);
+  }, [todayId, waterStorageKey, waterTarget, sessionUserId, sleepStorageKey]);
 
   useEffect(() => {
     let active = true;
@@ -399,65 +538,147 @@ export default function Dashboard({ profile, goals }) {
         ))}
       </View>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
-          <View style={styles.logoWrap}>
-            <View style={styles.logoRing} />
-            <View style={styles.logoRingThin} />
-            <View style={styles.logoBadge}>
-              <MaterialCommunityIcons name="run-fast" size={36} color="#e2e8f0" />
+        <View style={styles.topBar}>
+          <Text style={styles.topTime}>{todayId}</Text>
+          <MaterialCommunityIcons name="plus-circle-outline" size={22} color="#e2e8f0" />
+        </View>
+
+        <Image
+          source={require('../../hero-arc.png')}
+          style={[styles.heroArcImage, { width: heroArcWidth, height: heroArcHeight }]}
+          resizeMode="contain"
+        />
+        <View style={styles.heroBadgeRow}>
+          <TouchableOpacity
+            style={styles.cookieBadge}
+            onPress={() => router.push('/calories-burned')}
+            activeOpacity={0.85}
+          >
+            <MaterialCommunityIcons name="cookie" size={22} color="#fef3c7" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Gunluk ozet</Text>
+            <Text style={styles.sectionLink}>Detaylar</Text>
+          </View>
+
+          <View style={styles.metricGrid}>
+            <View style={styles.metricItem}>
+              <View style={styles.metricIcon}>
+                <MaterialCommunityIcons name="fire" size={16} color="#f97316" />
+              </View>
+              <View style={styles.metricText}>
+                <Text style={styles.metricLabel}>Kalori</Text>
+                <Text style={styles.metricValue}>{todayStats.calories || 0}</Text>
+                <Text style={styles.metricTarget}>/ {todayStats.caloriesTarget} kcal</Text>
+              </View>
+              <View style={styles.progressBarBackground}>
+                <View style={[styles.progressBarFill, { width: `${caloriesProgress * 100}%`, backgroundColor: '#f97316' }]} />
+              </View>
+            </View>
+            <View style={styles.metricItem}>
+              <View style={styles.metricIcon}>
+                <MaterialCommunityIcons name="shoe-print" size={16} color="#fbbf24" />
+              </View>
+              <View style={styles.metricText}>
+                <Text style={styles.metricLabel}>Adim</Text>
+                <Text style={styles.metricValue}>{displaySteps}</Text>
+                <Text style={styles.metricTarget}>/ {todayStats.stepsTarget} adim</Text>
+              </View>
+              <View style={styles.progressBarBackground}>
+                <View style={[styles.progressBarFill, { width: `${stepsProgress * 100}%`, backgroundColor: '#fbbf24' }]} />
+              </View>
+            </View>
+            <View style={styles.metricItem}>
+              <View style={styles.metricIcon}>
+                <MaterialCommunityIcons name="run" size={16} color="#38bdf8" />
+              </View>
+              <View style={styles.metricText}>
+                <Text style={styles.metricLabel}>Hareket</Text>
+                <Text style={styles.metricValue}>{movingMinutes}</Text>
+                <Text style={styles.metricTarget}>/ {movingTarget} dk</Text>
+              </View>
+              <View style={styles.progressBarBackground}>
+                <View style={[styles.progressBarFill, { width: `${movingProgress * 100}%`, backgroundColor: '#38bdf8' }]} />
+              </View>
             </View>
           </View>
-          <Text style={styles.heroTitle}>FitAdvisor</Text>
-          <Text style={styles.heroSubtitle}>Gunluk ozet ve hedefler burada.</Text>
-        </View>
-        <View style={styles.headerRow}>
-          <View style={styles.headerTextGroup}>
-            <Text style={styles.greeting}>Merhaba, {userName}</Text>
-            <Text style={styles.subtitle}>Bugunku saglik ozetin hazir.</Text>
+
+          <View style={styles.statusRow}>
+            <View style={styles.statusPill}>
+              <MaterialCommunityIcons name="human-handsup" size={16} color="#22c55e" />
+              <Text style={styles.statusText}>Aktif sure: {movingMinutes} dk</Text>
+            </View>
+            <View style={styles.statusPill}>
+              <MaterialCommunityIcons name="heart-pulse" size={16} color="#ef4444" />
+              <Text style={styles.statusText}>
+                Nabiz: {watchAvgHr ? `${watchAvgHr} bpm` : 'Veri bekleniyor'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.badge}>
-            <Text style={styles.badgeLabel}>Gun</Text>
-            <Text style={styles.badgeValue}>3</Text>
+        </View>
+
+        <View style={styles.cardRow}>
+          <View style={[styles.card, styles.smallCard]}>
+            <TouchableOpacity style={styles.sectionHeaderRow} onPress={() => router.push('/sleep-history')}>
+              <Text style={styles.sectionTitle}>Uyku</Text>
+              <MaterialCommunityIcons name="chevron-right" size={18} color="#94a3b8" />
+            </TouchableOpacity>
+            <Text style={styles.subtitle}>Bugun kac saat uyudun?</Text>
+            <TextInput
+              value={sleepHours}
+              onChangeText={(value) => {
+                setSleepHours(value.replace(/[^0-9.,]/g, ''));
+                setSleepStatus('');
+              }}
+              keyboardType="decimal-pad"
+              placeholder="Orn. 7.5"
+              placeholderTextColor="#94a3b8"
+              style={[styles.exerciseInput, { marginTop: 8 }]}
+            />
+            <View style={[styles.actionsRow, { marginTop: 8 }]}>
+              <TouchableOpacity style={styles.smallActionButton} onPress={handleSaveSleep}>
+                <Text style={styles.smallActionText}>Kaydet</Text>
+              </TouchableOpacity>
+            </View>
+            {sleepStatus ? <Text style={[styles.statusText, { marginTop: 6 }]}>{sleepStatus}</Text> : null}
+            {sleepHours ? (
+              <Text style={[styles.meta, { marginTop: 6 }]}>Bugun kayitli: {sleepHours} saat</Text>
+            ) : null}
+          </View>
+          <View style={[styles.card, styles.smallCard]}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Nabiz</Text>
+              <MaterialCommunityIcons name="chevron-right" size={18} color="#94a3b8" />
+            </View>
+            <Text style={styles.subtitle}>
+              {watchAvgHr ? `Ortalama: ${watchAvgHr} bpm` : 'Nabiz verisi ekle'}
+            </Text>
+            <View style={styles.heartBarRow}>
+              {Array.from({ length: 16 }).map((_, index) => (
+                <View
+                  key={`hb-${index}`}
+                  style={[
+                    styles.heartBar,
+                    { height: 18 + (index % 4) * 4, opacity: watchAvgHr ? 1 : 0.45 },
+                  ]}
+                />
+              ))}
+            </View>
           </View>
         </View>
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Bugunku hedeflerin</Text>
-            <Text style={styles.sectionLink}>Detaylar</Text>
+            <Text style={styles.sectionTitle}>Su</Text>
+            <Text style={styles.sectionTag}>Hedef: {todayStats.waterTarget} L</Text>
           </View>
-
-          <View style={styles.statsRow}>
-            <View style={styles.statCardWide}>
-              <View style={styles.labelRow}>
-                <MaterialCommunityIcons name="shoe-print" size={60} color="#38bdf8" />
-                <Text style={styles.statLabelLarge}>Adim</Text>
-              </View>
-              <Text style={styles.statValue}>{displaySteps}</Text>
-              <Text style={styles.statSubValue}>/ {todayStats.stepsTarget} adim</Text>
-              <View style={styles.progressBarBackground}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    { width: `${(displaySteps / todayStats.stepsTarget) * 100}%` },
-                  ]}
-                />
-              </View>
-              <View style={styles.actionsRow}>
-                <TouchableOpacity style={styles.smallActionButton} onPress={() => {}}>
-                  <Text style={styles.smallActionText}>+500</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.smallActionButton} onPress={() => {}}>
-                  <Text style={styles.smallActionText}>+1000</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-
           <View style={styles.statsRow}>
             <View style={styles.statCardSmall}>
               <View style={styles.labelRow}>
-                <MaterialCommunityIcons name="cup-water" size={60} color="#38bdf8" />
+                <MaterialCommunityIcons name="cup-water" size={52} color="#38bdf8" />
                 <Text style={styles.statLabelLarge}>Su</Text>
               </View>
               <Text style={styles.statValue}>{todayStats.waterLiters} L</Text>
@@ -660,6 +881,42 @@ export default function Dashboard({ profile, goals }) {
           />
         </View>
 
+        {trainerPreview.length > 0 ? (
+          <View style={styles.card}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Antrenorler</Text>
+              <Text style={styles.sectionTag}>Onerilen</Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.trainerRow}
+              snapToInterval={TRAINER_CARD_WIDTH + 12}
+              decelerationRate="fast"
+              snapToAlignment="start"
+              bounces={false}
+              pagingEnabled={false}
+              ref={trainerScrollRef}
+            >
+              {trainerTrack.map((t, idx) => (
+                <View key={t.id || t.username || t.name} style={styles.trainerChip}>
+                  {t.profilePhoto ? (
+                    <Image source={{ uri: t.profilePhoto }} style={styles.trainerAvatar} />
+                  ) : (
+                    <View style={[styles.trainerAvatar, styles.avatarFallback]}>
+                      <Text style={styles.avatarInitial}>
+                        {(t.name || t.username || 'T')[0]?.toUpperCase?.() || 'T'}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.trainerName}>{t.name || t.username || 'Trainer'}</Text>
+                  <Text style={styles.trainerMeta}>{t.specialty || 'Fitness'}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Bugunku onerim</Text>
@@ -705,6 +962,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#0a1630',
+    overflow: 'hidden',
   },
   gradient: {
     ...StyleSheet.absoluteFillObject,
@@ -714,6 +972,54 @@ const styles = StyleSheet.create({
   },
   iconCloudItem: {
     position: 'absolute',
+  },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  topTime: {
+    color: '#cbd5e1',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  heroArc: {
+    marginTop: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: heroArcHeight + 10,
+  },
+  heroArcImage: {
+    alignSelf: 'center',
+  },
+  heroBadgeRow: {
+    alignItems: 'flex-start',
+    marginTop: -4,
+  },
+  cookieBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0c1a32',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+  },
+  cookieText: {
+    color: '#fef3c7',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  heroTitleRow: {
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#f8fafc',
   },
   scrollContent: {
     paddingHorizontal: horizontalPadding,
@@ -796,6 +1102,11 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     color: '#cbd5e1',
+  },
+  meta: {
+    color: '#94a3b8',
+    fontSize: 12,
+    lineHeight: 18,
   },
   chipRow: {
     flexDirection: 'row',
@@ -891,6 +1202,46 @@ const styles = StyleSheet.create({
     color: '#cbd5e1',
     marginBottom: 4,
   },
+  metricGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  metricItem: {
+    flex: 1,
+    backgroundColor: '#0c1a32',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+  },
+  metricIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  metricText: {
+    marginBottom: 6,
+  },
+  metricLabel: {
+    fontSize: 12,
+    color: '#cbd5e1',
+    marginBottom: 2,
+  },
+  metricValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#f8fafc',
+    lineHeight: 26,
+  },
+  metricTarget: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
   statLabelLarge: {
     fontSize: 36,
     color: '#cbd5e1',
@@ -911,6 +1262,28 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     marginTop: 2,
   },
+  statusRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    flexWrap: 'wrap',
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: '#0c1a32',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+  },
+  statusText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   actionsRow: {
     flexDirection: 'row',
     gap: 8,
@@ -924,6 +1297,32 @@ const styles = StyleSheet.create({
   },
   waterGlassIcon: {
     marginRight: 2,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  smallCard: {
+    flex: 1,
+    padding: 16,
+  },
+  sleepBar: {
+    marginTop: 10,
+    height: 10,
+    borderRadius: 12,
+    backgroundColor: '#1f2937',
+  },
+  heartBarRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 4,
+    marginTop: 10,
+  },
+  heartBar: {
+    width: 6,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
   },
   smallActionButton: {
     paddingHorizontal: 10,
@@ -1051,6 +1450,35 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     fontSize: 14,
     marginTop: 8,
+  },
+  trainerRow: {
+    gap: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  trainerChip: {
+    width: TRAINER_CARD_WIDTH,
+    paddingVertical: 8,
+    gap: 6,
+    alignItems: 'center',
+  },
+  trainerAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#1f2937',
+  },
+  trainerName: {
+    color: '#e2e8f0',
+    fontWeight: '700',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  trainerMeta: {
+    color: '#94a3b8',
+    fontSize: 11,
+    textAlign: 'center',
   },
 });
 

@@ -421,11 +421,11 @@ export default function CalorieSearch() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0a1630' },
+  safeArea: { flex: 1, backgroundColor: '#0a1630', overflow: 'hidden' },
   gradient: { ...StyleSheet.absoluteFillObject },
   iconCloud: { ...StyleSheet.absoluteFillObject },
   iconCloudItem: { position: 'absolute' },
-  content: { padding: 16, gap: 12 },
+  content: { padding: 16, gap: 12, width: '100%' },
   title: { fontSize: 24, fontWeight: '800', color: '#f8fafc' },
   subtitle: { fontSize: 14, color: '#cbd5e1', lineHeight: 20 },
   dateText: { fontSize: 13, color: '#94a3b8', marginBottom: 6 },
