@@ -72,7 +72,6 @@ export default function Dashboard({ profile, goals }) {
     { id: 't2', name: 'Mehmet Demir', specialty: 'Kardiyo', profilePhoto: null },
     { id: 't3', name: 'Selin Aksoy', specialty: 'Mobilite', profilePhoto: null },
   ];
-  const trainerScrollRef = useRef<ScrollView | null>(null);
   const trainerTrack = useMemo(
     () => (trainerPreview.length > 1 ? [...trainerPreview, ...trainerPreview] : trainerPreview),
     [trainerPreview]
@@ -327,16 +326,6 @@ export default function Dashboard({ profile, goals }) {
     loadTrainers();
   }, []);
 
-  useEffect(() => {
-    if (!trainerTrack.length || trainerTrack.length < 2) return;
-    let idx = 0;
-    const step = TRAINER_CARD_WIDTH + 14;
-    const interval = setInterval(() => {
-      idx = (idx + 1) % trainerTrack.length;
-      trainerScrollRef.current?.scrollTo({ x: idx * step, animated: true });
-    }, 2200);
-    return () => clearInterval(interval);
-  }, [trainerTrack]);
 
   useEffect(() => {
     setTodayStats((prev) => ({ ...prev, waterTarget }));
@@ -882,24 +871,21 @@ export default function Dashboard({ profile, goals }) {
         </View>
 
         {trainerPreview.length > 0 ? (
-          <View style={styles.card}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Antrenorler</Text>
-              <Text style={styles.sectionTag}>Onerilen</Text>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.trainerRow}
-              snapToInterval={TRAINER_CARD_WIDTH + 12}
-              decelerationRate="fast"
-              snapToAlignment="start"
-              bounces={false}
-              pagingEnabled={false}
-              ref={trainerScrollRef}
-            >
-              {trainerTrack.map((t, idx) => (
-                <View key={t.id || t.username || t.name} style={styles.trainerChip}>
+            <View style={styles.card}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>Antrenorler</Text>
+                <Text style={styles.sectionTag}>Onerilen</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.trainerRow}
+              >
+                {trainerTrack.map((t, idx) => (
+                  <View
+                    key={`${t.id || t.username || t.name || 'trainer'}-${idx}`}
+                    style={styles.trainerChip}
+                  >
                   {t.profilePhoto ? (
                     <Image source={{ uri: t.profilePhoto }} style={styles.trainerAvatar} />
                   ) : (

@@ -18,9 +18,9 @@
       ]
     },
     "2": {
-      "avgHr": 81,
-      "steps": 2101,
-      "targetSteps": 3101,
+      "avgHr": 60,
+      "steps": 500,
+      "targetSteps": 1500,
       "title": "Dengeli Aktif",
       "message": "Tempoyu dengeli tut; haftada 2-3 tempolu yuruyus veya hafif kosu ile kapasiteyi artir.",
       "tips": [
@@ -34,9 +34,9 @@
       ]
     },
     "3": {
-      "avgHr": 80,
-      "steps": 8333,
-      "targetSteps": 9333,
+      "avgHr": 81,
+      "steps": 2914,
+      "targetSteps": 3914,
       "title": "Yuksek Aktivite",
       "message": "Yuksek hacmi korurken interval/tempo gunleri ile performansi gelistir, toparlanmaya oncelik ver.",
       "tips": [

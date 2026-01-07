@@ -32,13 +32,16 @@ const getHostFromExpo = () => {
 };
 
 export const getApiBase = () => {
+  if (Platform.OS === 'web') {
+    return process.env.EXPO_PUBLIC_API_URL_WEB || 'http://localhost:4000';
+  }
   const configured = getConfiguredBase();
   if (configured) return configured;
 
   const host = getHostFromExpo() || getDebuggerHost();
   if (host) return `http://${host}:4000`;
 
-  // Android emulator uses a special loopback; iOS simulator/ web can stay on localhost
+  // Android emulator uses a special loopback; iOS simulator can stay on localhost
   if (Platform.OS === 'android') return 'http://10.0.2.2:4000';
   return 'http://localhost:4000';
 };
